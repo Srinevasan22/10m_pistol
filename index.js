@@ -20,6 +20,6 @@ app.get('/', (req, res) => {
     res.send('Pistol Tracking App Backend');
 });
 
-// Start the server - test replit psuh 3
+// Start the server - test again
 const PORT = 3030;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
