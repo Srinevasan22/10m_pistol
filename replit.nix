@@ -1,6 +1,6 @@
-{pkgs}: {
+{ pkgs }: {
   deps = [
     pkgs.run
     pkgs.openssh
-   ];
+  ];
 }

@@ -19,3 +19,10 @@ run = [
 ]
 deploymentTarget = "cloudrun"
 ignorePorts = false
+
+# New run command for local Replit startup
+run = [
+    "sh",
+    "-c",
+    "echo \"$PRIVATE_SSH_KEY\" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519 && ssh-keyscan github.com >> ~/.ssh/known_hosts && eval $(ssh-agent -s) && ssh-add ~/.ssh/id_ed25519 && node index.js"
+]
