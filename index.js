@@ -65,7 +65,7 @@ app.get('/sessions/:sessionId/shots', async (req, res) => {
   }
 });
 
-// Start the server
+// Start the server - 123
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
 });
