@@ -65,6 +65,19 @@ app.get('/sessions/:sessionId/shots', async (req, res) => {
   }
 });
 
+// Fetch details of a single session
+app.get('/sessions/:sessionId', async (req, res) => {
+  try {
+    const session = await Session.findById(req.params.sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Session not found' });
+    }
+    res.json(session);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Start the server - Test git push
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
