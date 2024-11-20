@@ -65,7 +65,7 @@ app.get('/sessions/:sessionId/shots', async (req, res) => {
   }
 });
 
-// Start the server - 123
+// Start the server - Test git push
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
 });
