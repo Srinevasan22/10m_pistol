@@ -4,6 +4,8 @@ const bodyParser = require('body-parser');
 require('dotenv').config();
 
 const connectDB = require('./util/db'); // Import the database connection function
+const sessionRoutes = require('./route/sessionRoutes'); // Import session routes
+const shotRoutes = require('./route/shotRoutes'); // Import shot routes
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -22,6 +24,10 @@ const Shot = require('./model/shot'); // Import the Shot model
 app.get('/', (req, res) => {
   res.send('10m Pistol API is working!');
 });
+
+// Modular Routes
+app.use('/api/sessions', sessionRoutes); // All session-related routes
+app.use('/api/shots', shotRoutes); // All shot-related routes
 
 // Create a new session
 app.post('/sessions', async (req, res) => {
@@ -78,7 +84,7 @@ app.get('/sessions/:sessionId', async (req, res) => {
   }
 });
 
-// Start the server - Test git push
+// Start the server
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
 });
