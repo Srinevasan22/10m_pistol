@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const cors = require('cors');
+const mySecret = process.env['git_secret']
 
 const app = express();
 app.use(cors());
