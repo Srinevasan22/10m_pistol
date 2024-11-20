@@ -84,6 +84,11 @@ app.get('/sessions/:sessionId', async (req, res) => {
   }
 });
 
+// Add the /pistol route
+app.get('/pistol', (req, res) => {
+  res.send('Pistol API is working!');
+});
+
 // Start the server
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
