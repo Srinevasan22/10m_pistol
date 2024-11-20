@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 require('dotenv').config();
 
+const connectDB = require('./util/db'); // Import the database connection function
+
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -10,30 +12,11 @@ const port = process.env.PORT || 3000;
 app.use(bodyParser.json());
 
 // MongoDB Connection
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
-const db = mongoose.connection;
-db.on('error', console.error.bind(console, 'MongoDB connection error:'));
-db.once('open', () => {
-  console.log('Connected to MongoDB');
-});
+connectDB(); // Use the centralized database connection
 
 // Models
-const SessionSchema = new mongoose.Schema({
-  date: { type: Date, default: Date.now },
-  totalShots: Number,
-  averageScore: Number,
-});
-const ShotSchema = new mongoose.Schema({
-  sessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Session' },
-  score: Number,
-  positionX: Number,
-  positionY: Number,
-});
-const Session = mongoose.model('Session', SessionSchema);
-const Shot = mongoose.model('Shot', ShotSchema);
+const Session = require('./model/session'); // Import the Session model
+const Shot = require('./model/shot'); // Import the Shot model
 
 // Routes
 app.get('/', (req, res) => {
@@ -56,6 +39,27 @@ app.get('/sessions', async (req, res) => {
   try {
     const sessions = await Session.find();
     res.json(sessions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create a new shot
+app.post('/shots', async (req, res) => {
+  try {
+    const shot = new Shot(req.body);
+    await shot.save();
+    res.status(201).json(shot);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fetch all shots for a session
+app.get('/sessions/:sessionId/shots', async (req, res) => {
+  try {
+    const shots = await Shot.find({ sessionId: req.params.sessionId });
+    res.json(shots);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
