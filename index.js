@@ -1,95 +1,142 @@
-const express = require('express');
-const mongoose = require('mongoose');
-const bodyParser = require('body-parser');
-require('dotenv').config();
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
+import 'dart:convert';
+import 'dart:developer';
 
-const connectDB = require('./util/db'); // Import the database connection function
-const sessionRoutes = require('./route/sessionRoutes'); // Import session routes
-const shotRoutes = require('./route/shotRoutes'); // Import shot routes
+class AnalyticsPage extends StatefulWidget {
+  const AnalyticsPage({Key? key}) : super(key: key);
 
-const app = express();
-const port = process.env.PORT || 3030;
+  @override
+  _AnalyticsPageState createState() => _AnalyticsPageState();
+}
 
-// Middleware
-app.use(bodyParser.json());
+class _AnalyticsPageState extends State<AnalyticsPage> {
+  List<FlSpot> scoreDataPoints = [];
+  List<DateTime> sessionDates = []; // List to store session dates for x-axis
+  bool loadingError = false; // Add a flag to indicate if there was an error during loading
 
-// MongoDB Connection
-connectDB(); // Use the centralized database connection
-
-// Models
-const Session = require('./model/session'); // Import the Session model
-const Shot = require('./model/shot'); // Import the Shot model
-
-// Routes
-app.get('/', (req, res) => {
-  res.send('10m Pistol API is working!');
-});
-
-// Modular Routes
-app.use('/api/sessions', sessionRoutes); // All session-related routes
-app.use('/api/shots', shotRoutes); // All shot-related routes
-
-// Create a new session
-app.post('/sessions', async (req, res) => {
-  try {
-    const session = new Session(req.body);
-    await session.save();
-    res.status(201).json(session);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  @override
+  void initState() {
+    super.initState();
+    _loadScoreData();
   }
-});
 
-// Fetch all sessions
-app.get('/sessions', async (req, res) => {
-  try {
-    const sessions = await Session.find();
-    res.json(sessions);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+  Future<void> _loadScoreData() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$apiBaseUrl/sessions/aggregated')) // Fetch aggregated data for analytics
+          .timeout(const Duration(seconds: 10)); // Set a timeout of 10 seconds
 
-// Create a new shot
-app.post('/shots', async (req, res) => {
-  try {
-    const shot = new Shot(req.body);
-    await shot.save();
-    res.status(201).json(shot);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Fetch all shots for a session
-app.get('/sessions/:sessionId/shots', async (req, res) => {
-  try {
-    const shots = await Shot.find({ sessionId: req.params.sessionId });
-    res.json(shots);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Fetch details of a single session
-app.get('/sessions/:sessionId', async (req, res) => {
-  try {
-    const session = await Session.findById(req.params.sessionId);
-    if (!session) {
-      return res.status(404).json({ message: 'Session not found' });
+      if (response.statusCode == 200) {
+        List<dynamic> sessionList = jsonDecode(response.body);
+        List<FlSpot> points = [];
+        List<DateTime> dates = [];
+        for (int index = 0; index < sessionList.length; index++) {
+          var data = sessionList[index];
+          double averageScore = (data['average_score'] ?? 0).toDouble();
+          points.add(FlSpot(index.toDouble(), averageScore));
+          dates.add(DateTime.parse(data['date'])); // Store the date
+        }
+        setState(() {
+          scoreDataPoints = points;
+          sessionDates = dates;
+          loadingError = false; // Reset the error flag on successful load
+        });
+      } else {
+        throw Exception('Failed to load session data, status code: ${response.statusCode}');
+      }
+    } catch (e) {
+      log('Error loading score data: $e');
+      // Set the loadingError flag to true and display an error message
+      setState(() {
+        loadingError = true;
+      });
     }
-    res.json(session);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
-});
 
-// Add the /pistol route
-app.get('/pistol', (req, res) => {
-  res.send('Pistol API is working!');
-});
-
-// Start the server
-app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
-});
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("Analytics"),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: loadingError
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error, color: Colors.red, size: 48),
+                    const SizedBox(height: 16),
+                    Text(
+                      "Failed to load data. Please try again.",
+                      style: Theme.of(context).textTheme.bodyText1,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _loadScoreData,
+                      child: const Text("Retry"),
+                    ),
+                  ],
+                ),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Score Progression Over Time",
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 20),
+                  Expanded(
+                    child: LineChart(
+                      LineChartData(
+                        minX: 0,
+                        maxX: scoreDataPoints.isNotEmpty ? scoreDataPoints.length.toDouble() - 1 : 1,
+                        minY: 0,
+                        lineBarsData: [
+                          LineChartBarData(
+                            spots: scoreDataPoints,
+                            isCurved: true,
+                            color: Colors.blue,
+                            barWidth: 3,
+                            belowBarData: BarAreaData(show: false),
+                            dotData: FlDotData(show: true),
+                          ),
+                        ],
+                        titlesData: FlTitlesData(
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(showTitles: true, reservedSize: 40),
+                          ),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              getTitlesWidget: (value, meta) {
+                                int index = value.toInt();
+                                if (index < 0 || index >= sessionDates.length) return const SizedBox();
+                                var date = sessionDates[index];
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 8.0),
+                                  child: Text(
+                                    DateFormat('dd/MM').format(date),
+                                    style: const TextStyle(fontSize: 10),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        gridData: FlGridData(show: true),
+                        borderData: FlBorderData(show: true),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
