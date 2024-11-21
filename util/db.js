@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 require('dotenv').config();
 
-// Set the strictQuery setting to true to prepare for Mongoose 7
+// Set the strictQuery setting to true to prepare for Mongoose 7-.
 mongoose.set('strictQuery', true);
 
 const connectDB = async () => {
