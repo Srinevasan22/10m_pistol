@@ -1,7 +1,9 @@
-const mongoose = require('mongoose');
-require('dotenv').config();
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
 
-// Set the strictQuery setting to true to prepare for Mongoose 7-.
+dotenv.config();
+
+// Set the strictQuery setting to true to prepare for Mongoose 7
 mongoose.set('strictQuery', true);
 
 const connectDB = async () => {
@@ -19,4 +21,4 @@ const connectDB = async () => {
   }
 };
 
-module.exports = connectDB;
+export default connectDB;
