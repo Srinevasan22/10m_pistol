@@ -24,4 +24,6 @@ const shotSchema = new mongoose.Schema({
     },
 });
 
-export const Shot = mongoose.model('Shot', shotSchema);
+const Shot = mongoose.model('Shot', shotSchema);
+
+export { Shot };
