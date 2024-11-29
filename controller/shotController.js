@@ -62,3 +62,15 @@ export const deleteShot = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// Add a new shot to the session
+export const addShotToSession = async (req, res) => {
+  try {
+    const { sessionId, x, y, score } = req.body;
+    const newShot = new Shot({ sessionId, x, y, score });
+    await newShot.save();
+    res.status(201).json(newShot);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
