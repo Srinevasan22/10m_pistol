@@ -98,6 +98,22 @@ export const getSessionById = async (req, res) => {
   }
 };
 
+// Update a session by ID
+export const updateSession = async (req, res) => {
+  try {
+    const session = await Session.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: true,
+    });
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    res.json(session);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // Delete a session by ID
 export const deleteSession = async (req, res) => {
   try {
