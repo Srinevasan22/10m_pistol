@@ -1,12 +1,12 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const {
+import {
   addShot,
   getShotsBySession,
   getShotById,
   updateShot,
   deleteShot
-} = require('../controller/shotController');
+} from '../controller/shotController.js';
 
 // Route to add a new shot
 router.post('/shots', addShot);
@@ -23,4 +23,4 @@ router.put('/shots/:id', updateShot);
 // Route to delete a shot by its ID
 router.delete('/shots/:id', deleteShot);
 
-module.exports = router;
+export default router;
