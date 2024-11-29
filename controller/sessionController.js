@@ -1,5 +1,5 @@
 import Shot from '../model/shot.js';
-import Session from '../model/session.js';
+import { Session } from '../model/session.js';
 
 // Add a new shot
 export const addShot = async (req, res) => {
