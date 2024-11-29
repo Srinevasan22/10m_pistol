@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const shotSchema = new mongoose.Schema({
     sessionId: {
@@ -24,4 +24,4 @@ const shotSchema = new mongoose.Schema({
     },
 });
 
-module.exports = mongoose.model('Shot', shotSchema);
+export const Shot = mongoose.model('Shot', shotSchema);
