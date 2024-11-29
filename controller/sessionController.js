@@ -1,4 +1,5 @@
 const Shot = require('../model/shot');
+const Session = require('../model/session');
 
 // Add a new shot
 exports.addShot = async (req, res) => {
@@ -58,6 +59,17 @@ exports.deleteShot = async (req, res) => {
       return res.status(404).json({ error: 'Shot not found' });
     }
     res.json({ message: 'Shot deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Add a new session
+exports.addSession = async (req, res) => {
+  try {
+    const session = new Session(req.body);
+    await session.save();
+    res.status(201).json(session);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
