@@ -25,7 +25,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
   Future<void> _loadScoreData() async {
     try {
-      final Uri url = Uri.parse('$apiBaseUrl/sessions/aggregated'); // Construct URL for fetching aggregated data
+      final Uri url = Uri.parse('\$apiBaseUrl/sessions/aggregated'); // Construct URL for fetching aggregated data
       final response = await http.get(url).timeout(const Duration(seconds: 10)); // Set a timeout of 10 seconds
 
       if (response.statusCode == 200) {
@@ -44,10 +44,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           loadingError = false; // Reset the error flag on successful load
         });
       } else {
-        throw Exception('Failed to load session data, status code: ${response.statusCode}');
+        throw Exception('Failed to load session data, status code: \${response.statusCode}');
       }
     } catch (e) {
-      log('Error loading score data: $e');
+      log('Error loading score data: \$e');
       // Set the loadingError flag to true and display an error message
       setState(() {
         loadingError = true;
