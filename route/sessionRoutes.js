@@ -1,12 +1,12 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const {
+import {
   addSession,
   getSessions,
   getSessionById,
   updateSession,
   deleteSession
-} = require('../controller/sessionController');
+} from '../controller/sessionController.js';
 
 // Route to add a new session
 router.post('/sessions', addSession);
@@ -23,4 +23,4 @@ router.put('/sessions/:id', updateSession);
 // Route to delete a session by its ID
 router.delete('/sessions/:id', deleteSession);
 
-module.exports = router;
+export default router;
