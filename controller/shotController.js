@@ -1,7 +1,7 @@
-const Shot = require('../model/shot');
+import { Shot } from '../model/shot.js';
 
 // Add a new shot
-exports.addShot = async (req, res) => {
+export const addShot = async (req, res) => {
   try {
     const shot = new Shot(req.body);
     await shot.save();
@@ -12,7 +12,7 @@ exports.addShot = async (req, res) => {
 };
 
 // Get all shots by session ID
-exports.getShotsBySession = async (req, res) => {
+export const getShotsBySession = async (req, res) => {
   try {
     const shots = await Shot.find({ sessionId: req.params.id });
     res.json(shots);
@@ -22,7 +22,7 @@ exports.getShotsBySession = async (req, res) => {
 };
 
 // Get a shot by ID
-exports.getShotById = async (req, res) => {
+export const getShotById = async (req, res) => {
   try {
     const shot = await Shot.findById(req.params.id);
     if (!shot) {
@@ -35,7 +35,7 @@ exports.getShotById = async (req, res) => {
 };
 
 // Update a shot by ID
-exports.updateShot = async (req, res) => {
+export const updateShot = async (req, res) => {
   try {
     const shot = await Shot.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
@@ -51,7 +51,7 @@ exports.updateShot = async (req, res) => {
 };
 
 // Delete a shot by ID
-exports.deleteShot = async (req, res) => {
+export const deleteShot = async (req, res) => {
   try {
     const shot = await Shot.findByIdAndDelete(req.params.id);
     if (!shot) {
