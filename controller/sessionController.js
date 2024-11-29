@@ -65,7 +65,7 @@ exports.deleteShot = async (req, res) => {
 };
 
 // Add a new session
-exports.addSession = async (req, res) => {
+module.exports.addSession = async (req, res) => {
   try {
     const session = new Session(req.body);
     await session.save();
