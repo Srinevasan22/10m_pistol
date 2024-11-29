@@ -1,4 +1,4 @@
-import Shot from '../model/shot.js';
+import { Shot } from '../model/shot.js';
 import { Session } from '../model/session.js';
 
 // Add a new shot
