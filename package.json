@@ -10,13 +10,15 @@
     "build": "npm run clean && npm install"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "mongoose": "^6.8.0",
     "body-parser": "^1.20.2",
-    "dotenv": "^16.0.3"
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "mongoose": "^6.8.0"
   },
   "devDependencies": {
-    "nodemon": "^2.0.22"
+    "eslint": "^9.15.0",
+    "globals": "^15.12.0",
+    "nodemon": "^3.1.7"
   },
   "author": "Srinevasan22",
   "license": "ISC"
