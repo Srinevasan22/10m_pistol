@@ -75,6 +75,16 @@ export const addSession = async (req, res) => {
   }
 };
 
+// Get all sessions
+export const getSessions = async (req, res) => {
+  try {
+    const sessions = await Session.find();
+    res.json(sessions);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // Get a session by ID
 export const getSessionById = async (req, res) => {
   try {
