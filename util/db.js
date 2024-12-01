@@ -9,7 +9,7 @@ mongoose.set('strictQuery', true);
 const connectDB = async () => {
   try {
     // Updated connection string to use 127.0.0.1 instead of localhost
-    const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/your-database-name';
+    const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/10m_pistol';
     await mongoose.connect(mongoUri, {
       useNewUrlParser: true,
       useUnifiedTopology: true,

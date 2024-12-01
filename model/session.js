@@ -21,6 +21,10 @@ const sessionSchema = new mongoose.Schema({
         type: Number,
         default: 0,
     },
+    shots: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Shot'
+    }]
 });
 
 export const Session = mongoose.model('Session', sessionSchema);

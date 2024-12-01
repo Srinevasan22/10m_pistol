@@ -4,7 +4,7 @@ import { Session } from '../model/session.js';
 // Add a new shot
 export const addShot = async (req, res) => {
   try {
-    const shot = new Shot(req.body);
+    const shot = new Shot({ ...req.body, sessionId: req.params.id });
     await shot.save();
     res.status(201).json(shot);
   } catch (error) {

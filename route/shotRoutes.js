@@ -9,10 +9,10 @@ import {
 } from '../controller/shotController.js';
 
 // Route to add a new shot
-router.post('/shots', addShot);
+router.post('/:id/shots', addShot);
 
 // Route to get all shots by session ID
-router.get('/sessions/:id/shots', getShotsBySession);
+router.get('/:id/shots', getShotsBySession);
 
 // Route to get a shot by its ID
 router.get('/shots/:id', getShotById);

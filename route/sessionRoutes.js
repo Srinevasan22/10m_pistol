@@ -9,19 +9,19 @@ import {
 } from '../controller/sessionController.js';
 
 // Route to add a new session
-router.post('/sessions', addSession);
+router.post('/', addSession);
 
 // Route to get all sessions
-router.get('/sessions', getSessions);
+router.get('/', getSessions);
 
 // Route to get a session by its ID
-router.get('/sessions/:id', getSessionById);
+router.get('/:id', getSessionById);
 
 // Route to update a session by its ID
-router.put('/sessions/:id', updateSession);
+router.put('/:id', updateSession);
 
 // Route to delete a session by its ID
-router.delete('/sessions/:id', deleteSession);
+router.delete('/:id', deleteSession);
 
 export default router;
 
@@ -32,13 +32,13 @@ import {
   getShotById,
   updateShot,
   deleteShot
-} from '../controller/sessionController.js';
+} from '../controller/shotController.js';
 
 // Route to add a new shot
-router.post('/sessions/:id/shots', addShot);
+router.post('/:id/shots', addShot);
 
 // Route to get all shots by session ID
-router.get('/sessions/:id/shots', getShotsBySession);
+router.get('/:id/shots', getShotsBySession);
 
 // Route to get a shot by its ID
 router.get('/shots/:id', getShotById);
