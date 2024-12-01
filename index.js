@@ -10,6 +10,7 @@ import { dirname } from "path";
 import net from "net"; // Import net instead of using require
 import morgan from "morgan"; // Import morgan for HTTP request logging
 import winston from "winston"; // Import winston for detailed logging
+import fs from "fs"; // Import fs to create log directory if it doesn't exist
 
 dotenv.config();
 
@@ -22,6 +23,12 @@ connectDB();
 
 const app = express();
 
+// Ensure logs directory exists
+const logDir = path.join(__dirname, "logs");
+if (!fs.existsSync(logDir)) {
+  fs.mkdirSync(logDir);
+}
+
 // Set up Winston logger
 const logger = winston.createLogger({
   level: 'info',
@@ -30,14 +37,25 @@ const logger = winston.createLogger({
     winston.format.json()
   ),
   transports: [
-    new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
-    new winston.transports.File({ filename: 'logs/combined.log' }),
+    new winston.transports.File({ filename: path.join(logDir, 'error.log'), level: 'error' }),
+    new winston.transports.File({ filename: path.join(logDir, 'combined.log') }),
   ],
 });
 
 // Middleware
 app.use(express.json()); // Parse incoming JSON requests
-app.use(morgan('combined', { stream: winston.stream.write })); // Use morgan to log HTTP requests
+
+// Set up Morgan to use Winston for HTTP logging
+morgan.token('message', (req, res) => res.locals.errorMessage || '');
+const httpLogger = morgan(
+  ':method :url :status :res[content-length] - :response-time ms',
+  {
+    stream: {
+      write: (message) => logger.info(message.trim()),
+    },
+  }
+);
+app.use(httpLogger);
 
 // Serve favicon.ico
 app.use(
@@ -81,7 +99,7 @@ const getAvailablePort = (startPort) => {
   });
 };
 
-getAvailablePort(parseInt(process.env.PORT) || 5000).then((availablePort) => {
+getAvailablePort(parseInt(process.env.PORT) || 3030).then((availablePort) => {
   app.listen(availablePort, "127.0.0.1", () => {
     console.log(`Server running on http://127.0.0.1:${availablePort}`);
     logger.info(`Server started on port ${availablePort}`);
