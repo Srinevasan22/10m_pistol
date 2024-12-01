@@ -1,11 +1,12 @@
-import express from 'express';
-import dotenv from 'dotenv';
-import connectDB from './util/db.js';
-import sessionRoutes from './route/sessionRoutes.js';
-import shotRoutes from './route/shotRoutes.js';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import express from "express";
+import dotenv from "dotenv";
+import connectDB from "./util/db.js";
+import sessionRoutes from "./route/sessionRoutes.js";
+import shotRoutes from "./route/shotRoutes.js";
+import userRoutes from "./route/userRoutes.js";
+import path from "path";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
 
 dotenv.config();
 
@@ -22,14 +23,18 @@ const app = express();
 app.use(express.json()); // Parse incoming JSON requests
 
 // Serve favicon.ico
-app.use('/favicon.ico', express.static(path.join(__dirname, 'public', 'favicon.ico')));
+app.use(
+  "/favicon.ico",
+  express.static(path.join(__dirname, "public", "favicon.ico")),
+);
 
 // Routes
-app.use('/pistol/sessions', sessionRoutes);
-app.use('/pistol/shots', shotRoutes);
+app.use("/pistol/users", userRoutes); // New route for user management
+app.use("/pistol/sessions", sessionRoutes);
+app.use("/pistol/shots", shotRoutes);
 
 // Start the server - db test 3
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, '127.0.0.1', () => {
+app.listen(PORT, "127.0.0.1", () => {
   console.log(`Server running on http://127.0.0.1:${PORT}`);
 });

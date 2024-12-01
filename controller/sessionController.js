@@ -4,7 +4,7 @@ import { Session } from '../model/session.js';
 // Add a new shot
 export const addShot = async (req, res) => {
   try {
-    const shot = new Shot({ ...req.body, sessionId: req.params.id });
+    const shot = new Shot({ ...req.body, sessionId: req.params.sessionId });
     await shot.save();
     res.status(201).json(shot);
   } catch (error) {
@@ -15,7 +15,7 @@ export const addShot = async (req, res) => {
 // Get all shots by session ID
 export const getShotsBySession = async (req, res) => {
   try {
-    const shots = await Shot.find({ sessionId: req.params.id });
+    const shots = await Shot.find({ sessionId: req.params.sessionId });
     res.json(shots);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -25,7 +25,7 @@ export const getShotsBySession = async (req, res) => {
 // Get a shot by ID
 export const getShotById = async (req, res) => {
   try {
-    const shot = await Shot.findById(req.params.id);
+    const shot = await Shot.findById(req.params.shotId);
     if (!shot) {
       return res.status(404).json({ error: 'Shot not found' });
     }
@@ -38,7 +38,7 @@ export const getShotById = async (req, res) => {
 // Update a shot by ID
 export const updateShot = async (req, res) => {
   try {
-    const shot = await Shot.findByIdAndUpdate(req.params.id, req.body, {
+    const shot = await Shot.findByIdAndUpdate(req.params.shotId, req.body, {
       new: true,
       runValidators: true,
     });
@@ -54,7 +54,7 @@ export const updateShot = async (req, res) => {
 // Delete a shot by ID
 export const deleteShot = async (req, res) => {
   try {
-    const shot = await Shot.findByIdAndDelete(req.params.id);
+    const shot = await Shot.findByIdAndDelete(req.params.shotId);
     if (!shot) {
       return res.status(404).json({ error: 'Shot not found' });
     }
@@ -88,7 +88,7 @@ export const getSessions = async (req, res) => {
 // Get a session by ID
 export const getSessionById = async (req, res) => {
   try {
-    const session = await Session.findById(req.params.id);
+    const session = await Session.findById(req.params.sessionId).populate('shots');
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
@@ -101,7 +101,7 @@ export const getSessionById = async (req, res) => {
 // Update a session by ID
 export const updateSession = async (req, res) => {
   try {
-    const session = await Session.findByIdAndUpdate(req.params.id, req.body, {
+    const session = await Session.findByIdAndUpdate(req.params.sessionId, req.body, {
       new: true,
       runValidators: true,
     });
@@ -117,7 +117,7 @@ export const updateSession = async (req, res) => {
 // Delete a session by ID
 export const deleteSession = async (req, res) => {
   try {
-    const session = await Session.findByIdAndDelete(req.params.id);
+    const session = await Session.findByIdAndDelete(req.params.sessionId);
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
