@@ -8,6 +8,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import net from "net"; // Import net instead of using require
+import morgan from "morgan"; // Import morgan for HTTP request logging
+import winston from "winston"; // Import winston for detailed logging
 
 dotenv.config();
 
@@ -20,8 +22,22 @@ connectDB();
 
 const app = express();
 
+// Set up Winston logger
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'logs/combined.log' }),
+  ],
+});
+
 // Middleware
 app.use(express.json()); // Parse incoming JSON requests
+app.use(morgan('combined', { stream: winston.stream.write })); // Use morgan to log HTTP requests
 
 // Serve favicon.ico
 app.use(
@@ -33,6 +49,12 @@ app.use(
 app.use("/pistol/users", userRoutes); // New route for user management
 app.use("/pistol/sessions", sessionRoutes);
 app.use("/pistol/shots", shotRoutes);
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  logger.error(`${err.message}`);
+  res.status(500).json({ error: "An unexpected error occurred." });
+});
 
 // Start the server with dynamic port assignment
 const getAvailablePort = (startPort) => {
@@ -62,8 +84,10 @@ const getAvailablePort = (startPort) => {
 getAvailablePort(parseInt(process.env.PORT) || 5000).then((availablePort) => {
   app.listen(availablePort, "127.0.0.1", () => {
     console.log(`Server running on http://127.0.0.1:${availablePort}`);
+    logger.info(`Server started on port ${availablePort}`);
   });
 }).catch((err) => {
+  logger.error("Failed to find available port:", err);
   console.error("Failed to find available port:", err);
   process.exit(1);
 });
