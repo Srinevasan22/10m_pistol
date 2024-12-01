@@ -6,7 +6,7 @@ import {
   getSessionById,
   updateSession,
   deleteSession
-} from '../controllers/sessionController.js';
+} from '../controller/sessionController.js';
 
 // Route to add a new session
 router.post('/', addSession);
@@ -30,7 +30,7 @@ import {
   getShotById,
   updateShot,
   deleteShot
-} from '../controllers/shotController.js';
+} from '../controller/shotController.js';
 
 // Route to add a new shot
 router.post('/:sessionId/shots', addShot);

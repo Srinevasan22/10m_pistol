@@ -6,7 +6,7 @@ import {
   getShotById,
   updateShot,
   deleteShot
-} from '../controllers/shotController.js';
+} from '../controller/shotController.js';
 
 // Route to add a new shot
 router.post('/:sessionId/shots', addShot);
