@@ -33,8 +33,37 @@ app.use("/pistol/users", userRoutes); // New route for user management
 app.use("/pistol/sessions", sessionRoutes);
 app.use("/pistol/shots", shotRoutes);
 
-// Start the server - db test 3
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, "127.0.0.1", () => {
-  console.log(`Server running on http://127.0.0.1:${PORT}`);
+// Start the server with dynamic port assignment
+const getAvailablePort = (startPort) => {
+  const net = require("net");
+  let port = startPort;
+
+  const checkPort = (resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        port++;
+        checkPort(resolve, reject);
+      } else {
+        reject(err);
+      }
+    });
+    server.once("listening", () => {
+      server.close(() => resolve(port));
+    });
+    server.listen(port, "127.0.0.1");
+  };
+
+  return new Promise((resolve, reject) => {
+    checkPort(resolve, reject);
+  });
+};
+
+getAvailablePort(parseInt(process.env.PORT) || 5000).then((availablePort) => {
+  app.listen(availablePort, "127.0.0.1", () => {
+    console.log(`Server running on http://127.0.0.1:${availablePort}`);
+  });
+}).catch((err) => {
+  console.error("Failed to find available port:", err);
+  process.exit(1);
 });
