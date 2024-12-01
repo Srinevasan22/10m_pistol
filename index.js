@@ -82,14 +82,14 @@ const getAvailablePort = (startPort) => {
     const server = net.createServer();
     server.once("error", (err) => {
       if (err.code === "EADDRINUSE") {
-        port++;
+        port++;  // Try the next port if the current one is in use
         checkPort(resolve, reject);
       } else {
-        reject(err);
+        reject(err);  // Reject if there is another error
       }
     });
     server.once("listening", () => {
-      server.close(() => resolve(port));
+      server.close(() => resolve(port));  // Resolve when a port is found
     });
     server.listen(port, "127.0.0.1");
   };
@@ -99,13 +99,11 @@ const getAvailablePort = (startPort) => {
   });
 };
 
-// Start the server with dynamic port assignment 123
-getAvailablePort(parseInt(process.env.PORT) || 3030).then((availablePort) => {
-  app.listen(availablePort, "127.0.0.1", () => {
-    console.log(`Server running on http://127.0.0.1:${availablePort}`);
-    logger.info(`Server started on port ${availablePort}`);
+// Start the server on an available port, starting from 3031
+getAvailablePort(3031).then((port) => {
+  app.listen(port, () => {
+    logger.info(`Server started on port ${port}`);
   });
 }).catch((err) => {
-  console.error("Failed to find available port:", err);
-  process.exit(1);
+  logger.error(`Error finding available port: ${err.message}`);
 });
