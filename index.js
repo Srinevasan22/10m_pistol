@@ -15,8 +15,8 @@ const app = express();
 app.use(express.json()); // Parse incoming JSON requests
 
 // Routes
-app.use('/api/sessions', sessionRoutes);
-app.use('/api/shots', shotRoutes);
+app.use('/pistol/sessions', sessionRoutes);
+app.use('/pistol/shots', shotRoutes);
 
 // Start the server - Test 7
 const PORT = process.env.PORT || 5000;
