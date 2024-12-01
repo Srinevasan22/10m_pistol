@@ -13,6 +13,7 @@ const connectDB = async () => {
     await mongoose.connect(mongoUri, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
+      family: 4, // Force using IPv4, not IPv6
     });
     console.log('MongoDB Connected...');
   } catch (err) {
