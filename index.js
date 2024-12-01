@@ -22,7 +22,7 @@ app.use('/favicon.ico', express.static(path.join(__dirname, 'public', 'favicon.i
 app.use('/api/pistol/sessions', sessionRoutes);
 app.use('/api/pistol/shots', shotRoutes);
 
-// Start the server - db test 2
+// Start the server - db test 3
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '127.0.0.1', () => {
   console.log(`Server running on http://127.0.0.1:${PORT}`);
