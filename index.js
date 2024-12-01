@@ -7,6 +7,7 @@ import userRoutes from "./route/userRoutes.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+import net from "net"; // Import net instead of using require
 
 dotenv.config();
 
@@ -35,7 +36,6 @@ app.use("/pistol/shots", shotRoutes);
 
 // Start the server with dynamic port assignment
 const getAvailablePort = (startPort) => {
-  const net = require("net");
   let port = startPort;
 
   const checkPort = (resolve, reject) => {
