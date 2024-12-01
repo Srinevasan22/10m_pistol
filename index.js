@@ -99,13 +99,13 @@ const getAvailablePort = (startPort) => {
   });
 };
 
+// Start the server with dynamic port assignment
 getAvailablePort(parseInt(process.env.PORT) || 3030).then((availablePort) => {
   app.listen(availablePort, "127.0.0.1", () => {
     console.log(`Server running on http://127.0.0.1:${availablePort}`);
     logger.info(`Server started on port ${availablePort}`);
   });
 }).catch((err) => {
-  logger.error("Failed to find available port:", err);
   console.error("Failed to find available port:", err);
   process.exit(1);
 });
