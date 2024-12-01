@@ -25,8 +25,8 @@ app.use(express.json()); // Parse incoming JSON requests
 app.use('/favicon.ico', express.static(path.join(__dirname, 'public', 'favicon.ico')));
 
 // Routes
-app.use('/api/pistol/sessions', sessionRoutes);
-app.use('/api/pistol/shots', shotRoutes);
+app.use('/pistol/sessions', sessionRoutes);
+app.use('/pistol/shots', shotRoutes);
 
 // Start the server - db test 3
 const PORT = process.env.PORT || 5000;
