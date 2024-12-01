@@ -99,7 +99,7 @@ const getAvailablePort = (startPort) => {
   });
 };
 
-// Start the server with dynamic port assignment
+// Start the server with dynamic port assignment 123
 getAvailablePort(parseInt(process.env.PORT) || 3030).then((availablePort) => {
   app.listen(availablePort, "127.0.0.1", () => {
     console.log(`Server running on http://127.0.0.1:${availablePort}`);
