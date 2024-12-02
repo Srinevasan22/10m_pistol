@@ -20,23 +20,36 @@ const logger = winston.createLogger({
   ],
 });
 
-const connectDB = async () => {
-  try {
-    // Updated connection string to use 127.0.0.1 instead of localhost
-    const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/10m_pistol';
-    await mongoose.connect(mongoUri, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      family: 4, // Force using IPv4, not IPv6
-      serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
-      socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
-    });
-    console.log('MongoDB Connected...');
-    logger.info('MongoDB Connected...');
-  } catch (err) {
-    console.error(`MongoDB Connection Error: ${err.message}`);
-    logger.error(`MongoDB Connection Error: ${err.message}`);
-    process.exit(1);
+const connectDB = async (retryCount = 5, retryDelay = 5000) => {
+  let attempts = 0;
+  while (attempts < retryCount) {
+    try {
+      // Updated connection string to use 127.0.0.1 instead of localhost
+      const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/10m_pistol';
+      await mongoose.connect(mongoUri, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+        family: 4, // Force using IPv4, not IPv6
+        serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
+        socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
+      });
+      console.log('MongoDB Connected...');
+      logger.info('MongoDB Connected...');
+      return; // Exit the function if the connection is successful
+    } catch (err) {
+      console.error(`MongoDB Connection Error: ${err.message}`);
+      logger.error(`MongoDB Connection Error: ${err.message}`);
+      attempts++;
+      if (attempts < retryCount) {
+        console.log(`Retrying MongoDB connection in ${retryDelay / 1000} seconds...`);
+        logger.warn(`Retrying MongoDB connection in ${retryDelay / 1000} seconds...`);
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+      } else {
+        console.error('Failed to connect to MongoDB after multiple attempts.');
+        logger.error('Failed to connect to MongoDB after multiple attempts.');
+        process.exit(1);
+      }
+    }
   }
 };
 
