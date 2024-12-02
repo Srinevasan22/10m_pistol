@@ -11,6 +11,8 @@ import net from "net"; // Import net instead of using require
 import morgan from "morgan"; // Import morgan for HTTP request logging
 import winston from "winston"; // Import winston for detailed logging
 import fs from "fs"; // Import fs to create log directory if it doesn't exist
+import helmet from "helmet"; // Import helmet for security enhancements
+import cors from "cors"; // Import cors to allow cross-origin requests
 
 dotenv.config();
 
@@ -45,6 +47,8 @@ const logger = winston.createLogger({
 
 // Middleware
 app.use(express.json()); // Parse incoming JSON requests
+app.use(helmet()); // Use Helmet to enhance security
+app.use(cors()); // Enable CORS for all routes
 
 // Set up Morgan to use Winston for HTTP logging (log only errors)
 morgan.token('message', (req, res) => res.locals.errorMessage || '');
