@@ -105,8 +105,8 @@ const getAvailablePort = (startPort) => {
   });
 };
 
-// Start the server on an available port, starting from 3031
-getAvailablePort(3031).then((port) => {
+// Start the server on an available port, starting from 3030
+getAvailablePort(3030).then((port) => {
   const server = app.listen(port, () => {
     logger.info(`Server started on port ${port}`);
   });
