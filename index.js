@@ -39,17 +39,19 @@ const logger = winston.createLogger({
   transports: [
     new winston.transports.File({ filename: path.join(logDir, 'error.log'), level: 'error' }),
     new winston.transports.File({ filename: path.join(logDir, 'combined.log') }),
+    new winston.transports.Console(), // Log to console as well for visibility
   ],
 });
 
 // Middleware
 app.use(express.json()); // Parse incoming JSON requests
 
-// Set up Morgan to use Winston for HTTP logging
+// Set up Morgan to use Winston for HTTP logging (log only errors)
 morgan.token('message', (req, res) => res.locals.errorMessage || '');
 const httpLogger = morgan(
   ':method :url :status :res[content-length] - :response-time ms',
   {
+    skip: (req, res) => res.statusCode < 400, // Log only errors (status codes >= 400)
     stream: {
       write: (message) => logger.info(message.trim()),
     },
@@ -101,8 +103,16 @@ const getAvailablePort = (startPort) => {
 
 // Start the server on an available port, starting from 3031
 getAvailablePort(3031).then((port) => {
-  app.listen(port, () => {
+  const server = app.listen(port, () => {
     logger.info(`Server started on port ${port}`);
+  });
+
+  // Graceful shutdown
+  process.on('SIGINT', () => {
+    server.close(() => {
+      logger.info('Server closed due to app termination');
+      process.exit(0);
+    });
   });
 }).catch((err) => {
   logger.error(`Error finding available port: ${err.message}`);
