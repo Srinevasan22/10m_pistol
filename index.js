@@ -112,11 +112,13 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "An unexpected error occurred." });
 });
 
-// Log all registered routes for debugging
+// Log all registered routes
 app._router.stack.forEach(function (middleware) {
-  if (middleware.route) { // Routes registered directly on the app
+  if (middleware.route) {
+    // Routes registered directly on the app
     console.log(middleware.route);
-  } else if (middleware.name === 'router') { // Router middleware
+  } else if (middleware.name === 'router') {
+    // Router middleware
     middleware.handle.stack.forEach(function (handler) {
       if (handler.route) {
         console.log(handler.route);
