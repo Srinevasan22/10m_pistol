@@ -1,10 +1,16 @@
-import { Shot } from '../model/shot.js';
+import Shot from '../model/shot.js';  // Correct way to import a default export
 import { Session } from '../model/session.js';
 
 // Add a new shot
 export const addShot = async (req, res) => {
   try {
-    const shot = new Shot({ ...req.body, sessionId: req.params.sessionId });
+    const shot = new Shot({ 
+      ...req.body, 
+      sessionId: req.params.sessionId,
+      positionX: req.body.positionX || 0, // Default value for positionX
+      positionY: req.body.positionY || 0, // Default value for positionY
+      timestamp: new Date() // Automatically set timestamp
+    });
     await shot.save();
     res.status(201).json(shot);
   } catch (error) {
@@ -38,10 +44,18 @@ export const getShotById = async (req, res) => {
 // Update a shot by ID
 export const updateShot = async (req, res) => {
   try {
-    const shot = await Shot.findByIdAndUpdate(req.params.shotId, req.body, {
-      new: true,
-      runValidators: true,
-    });
+    const shot = await Shot.findByIdAndUpdate(
+      req.params.shotId,
+      { 
+        ...req.body,
+        positionX: req.body.positionX || 0, // Default value for positionX
+        positionY: req.body.positionY || 0  // Default value for positionY
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
     if (!shot) {
       return res.status(404).json({ error: 'Shot not found' });
     }

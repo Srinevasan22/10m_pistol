@@ -24,6 +24,6 @@ const shotSchema = new mongoose.Schema({
   }
 });
 
-// Correct export for ES Module default export
+// Correctly export Shot as the default export
 const Shot = mongoose.model('Shot', shotSchema);
 export default Shot;

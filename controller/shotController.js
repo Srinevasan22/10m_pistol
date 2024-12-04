@@ -1,4 +1,4 @@
-import { Shot } from '../model/shot.js';
+import Shot from '../model/shot.js';  // Correct way to import a default export
 
 // Add a new shot
 export const addShot = async (req, res) => {
