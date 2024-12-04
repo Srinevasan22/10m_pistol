@@ -14,7 +14,10 @@
     "dotenv": "^16.0.3",
     "express": "^4.18.2",
     "mongoose": "^6.8.0",
-    "winston": "^3.17.0"
+    "winston": "^3.17.0",
+    "cors": "^2.8.5",  // Added cors dependency
+    "helmet": "^6.0.0",  // Added helmet dependency for security
+    "morgan": "^1.10.0"  // Added morgan dependency for HTTP request logging
   },
   "devDependencies": {
     "eslint": "^9.15.0",
