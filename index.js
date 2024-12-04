@@ -112,6 +112,19 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "An unexpected error occurred." });
 });
 
+// Log all registered routes for debugging
+app._router.stack.forEach(function (middleware) {
+  if (middleware.route) { // Routes registered directly on the app
+    console.log(middleware.route);
+  } else if (middleware.name === 'router') { // Router middleware
+    middleware.handle.stack.forEach(function (handler) {
+      if (handler.route) {
+        console.log(handler.route);
+      }
+    });
+  }
+});
+
 // Start the server with dynamic port assignment
 const getAvailablePort = (startPort) => {
   let port = startPort;
