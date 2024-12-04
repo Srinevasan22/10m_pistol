@@ -8,21 +8,6 @@ import {
   deleteSession
 } from '../controller/sessionController.js';
 
-// Route to add a new session
-router.post('/', addSession);
-
-// Route to get all sessions
-router.get('/', getSessions);
-
-// Route to get a session by its ID
-router.get('/:sessionId', getSessionById);
-
-// Route to update a session by its ID
-router.put('/:sessionId', updateSession);
-
-// Route to delete a session by its ID
-router.delete('/:sessionId', deleteSession);
-
 // Importing Shot controller
 import {
   addShot,
@@ -32,19 +17,44 @@ import {
   deleteShot
 } from '../controller/shotController.js';
 
-// Route to add a new shot
-router.post('/:sessionId/shots', addShot);
+// Route to add a new session for a specific user
+// @route POST /pistol/users/:userId/sessions
+router.post('/users/:userId/sessions', addSession);
 
-// Route to get all shots by session ID
-router.get('/:sessionId/shots', getShotsBySession);
+// Route to get all sessions for a specific user
+// @route GET /pistol/users/:userId/sessions
+router.get('/users/:userId/sessions', getSessions);
 
-// Route to get a shot by its ID
-router.get('/:sessionId/shots/:shotId', getShotById);
+// Route to get a session by its ID for a specific user
+// @route GET /pistol/users/:userId/sessions/:sessionId
+router.get('/users/:userId/sessions/:sessionId', getSessionById);
 
-// Route to update a shot by its ID
-router.put('/:sessionId/shots/:shotId', updateShot);
+// Route to update a session by its ID for a specific user
+// @route PUT /pistol/users/:userId/sessions/:sessionId
+router.put('/users/:userId/sessions/:sessionId', updateSession);
 
-// Route to delete a shot by its ID
-router.delete('/:sessionId/shots/:shotId', deleteShot);
+// Route to delete a session by its ID for a specific user
+// @route DELETE /pistol/users/:userId/sessions/:sessionId
+router.delete('/users/:userId/sessions/:sessionId', deleteSession);
+
+// Route to add a new shot to a session for a specific user
+// @route POST /pistol/users/:userId/sessions/:sessionId/shots
+router.post('/users/:userId/sessions/:sessionId/shots', addShot);
+
+// Route to get all shots by session ID for a specific user
+// @route GET /pistol/users/:userId/sessions/:sessionId/shots
+router.get('/users/:userId/sessions/:sessionId/shots', getShotsBySession);
+
+// Route to get a shot by its ID within a session for a specific user
+// @route GET /pistol/users/:userId/sessions/:sessionId/shots/:shotId
+router.get('/users/:userId/sessions/:sessionId/shots/:shotId', getShotById);
+
+// Route to update a shot by its ID within a session for a specific user
+// @route PUT /pistol/users/:userId/sessions/:sessionId/shots/:shotId
+router.put('/users/:userId/sessions/:sessionId/shots/:shotId', updateShot);
+
+// Route to delete a shot by its ID within a session for a specific user
+// @route DELETE /pistol/users/:userId/sessions/:sessionId/shots/:shotId
+router.delete('/users/:userId/sessions/:sessionId/shots/:shotId', deleteShot);
 
 export default router;

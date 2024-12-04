@@ -2,7 +2,6 @@ import express from "express";
 import dotenv from "dotenv";
 import connectDB from "./util/db.js";
 import sessionRoutes from "./route/sessionRoutes.js";
-import shotRoutes from "./route/shotRoutes.js";
 import userRoutes from "./route/userRoutes.js";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -97,9 +96,10 @@ app.get("/health", (req, res) => {
 });
 
 // Routes
-app.use("/pistol/users", userRoutes); // New route for user management
-app.use("/pistol/sessions", sessionRoutes);
-app.use("/pistol/shots", shotRoutes);
+app.use("/pistol/users", userRoutes); // Base route for users
+
+// Nested session and shot routes to include userId
+app.use("/pistol/users/:userId/sessions", sessionRoutes);
 
 // Handle 404 errors (not found routes)
 app.use((req, res, next) => {

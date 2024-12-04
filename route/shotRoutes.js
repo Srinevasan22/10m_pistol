@@ -5,9 +5,9 @@ import {
   getShotsBySession,
   getShotById,
   updateShot,
-  deleteShot
+  deleteShot,
 } from '../controller/shotController.js';
-import Shot from '../model/shot.js';  // Correct import of Shot model
+import Shot from '../model/shot.js'; // Correct import of Shot model
 
 // Middleware to add default values for positionX, positionY, and timestamp if not provided
 router.use((req, res, next) => {
@@ -19,22 +19,22 @@ router.use((req, res, next) => {
   next();
 });
 
-// Route to add a new shot to a specific session
-router.post('/:sessionId/shots', addShot);
+// Route to add a new shot to a specific session for a specific user
+router.post('/users/:userId/sessions/:sessionId/shots', addShot);
 
-// Route to get all shots by session ID
-router.get('/:sessionId/shots', getShotsBySession);
+// Route to get all shots by session ID for a specific user
+router.get('/users/:userId/sessions/:sessionId/shots', getShotsBySession);
 
-// Route to get a shot by its ID within a session
-router.get('/:sessionId/shots/:shotId', getShotById);
+// Route to get a shot by its ID within a session for a specific user
+router.get('/users/:userId/sessions/:sessionId/shots/:shotId', getShotById);
 
-// Route to update a shot by its ID within a session
-router.put('/:sessionId/shots/:shotId', updateShot);
+// Route to update a shot by its ID within a session for a specific user
+router.put('/users/:userId/sessions/:sessionId/shots/:shotId', updateShot);
 
-// Route to delete a shot by its ID within a session
-router.delete('/:sessionId/shots/:shotId', deleteShot);
+// Route to delete a shot by its ID within a session for a specific user
+router.delete('/users/:userId/sessions/:sessionId/shots/:shotId', deleteShot);
 
-// NEW: Route to get all shots (irrespective of session)
+// NEW: Route to get all shots (irrespective of session or user)
 router.get('/', async (req, res) => {
   try {
     const shots = await Shot.find();
