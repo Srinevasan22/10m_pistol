@@ -26,3 +26,35 @@ export const getAllUsers = async (req, res) => {
     res.status(500).json({ message: "Failed to get users", error: error.message });
   }
 };
+
+// Get user by ID
+export const getUserById = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId);
+    if (!user) {
+      console.log("User not found with ID:", req.params.userId); // Log if user not found
+      return res.status(404).json({ message: "User not found" });
+    }
+    console.log("Fetched user by ID:", user); // Log the fetched user
+    res.status(200).json(user);
+  } catch (error) {
+    console.error("Error fetching user by ID:", error.message); // Log any errors
+    res.status(500).json({ message: "Failed to get user", error: error.message });
+  }
+};
+
+// Delete user by ID
+export const deleteUserById = async (req, res) => {
+  try {
+    const user = await User.findByIdAndDelete(req.params.userId);
+    if (!user) {
+      console.log("User not found for deletion with ID:", req.params.userId); // Log if user not found
+      return res.status(404).json({ message: "User not found" });
+    }
+    console.log("User deleted:", user); // Log the deleted user
+    res.status(200).json({ message: "User deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting user:", error.message); // Log any errors
+    res.status(500).json({ message: "Failed to delete user", error: error.message });
+  }
+};
