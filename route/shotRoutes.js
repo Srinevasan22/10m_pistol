@@ -20,22 +20,22 @@ router.use((req, res, next) => {
 });
 
 // Route to add a new shot to a specific session
-router.post('/sessions/:sessionId/shots', addShot);
+router.post('/:sessionId/shots', addShot);
 
 // Route to get all shots by session ID
-router.get('/sessions/:sessionId/shots', getShotsBySession);
+router.get('/:sessionId/shots', getShotsBySession);
 
 // Route to get a shot by its ID within a session
-router.get('/sessions/:sessionId/shots/:shotId', getShotById);
+router.get('/:sessionId/shots/:shotId', getShotById);
 
 // Route to update a shot by its ID within a session
-router.put('/sessions/:sessionId/shots/:shotId', updateShot);
+router.put('/:sessionId/shots/:shotId', updateShot);
 
 // Route to delete a shot by its ID within a session
-router.delete('/sessions/:sessionId/shots/:shotId', deleteShot);
+router.delete('/:sessionId/shots/:shotId', deleteShot);
 
 // NEW: Route to get all shots (irrespective of session)
-router.get('/shots', async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const shots = await Shot.find();
     res.status(200).json(shots);
