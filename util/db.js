@@ -59,6 +59,11 @@ mongoose.connection.on('connected', () => {
   logger.info('Mongoose connected to DB');
 });
 
+mongoose.connection.on('reconnected', () => {
+  console.log('Mongoose reconnected to DB');
+  logger.info('Mongoose reconnected to DB');
+});
+
 mongoose.connection.on('error', (err) => {
   console.error(`Mongoose connection error: ${err}`);
   logger.error(`Mongoose connection error: ${err}`);
@@ -67,6 +72,16 @@ mongoose.connection.on('error', (err) => {
 mongoose.connection.on('disconnected', () => {
   console.log('Mongoose disconnected from DB');
   logger.warn('Mongoose disconnected from DB');
+});
+
+mongoose.connection.on('timeout', () => {
+  console.warn('Mongoose connection timed out');
+  logger.warn('Mongoose connection timed out');
+});
+
+mongoose.connection.on('close', () => {
+  console.log('Mongoose connection closed');
+  logger.info('Mongoose connection closed');
 });
 
 // Handle termination signals properly

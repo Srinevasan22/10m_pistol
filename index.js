@@ -20,6 +20,12 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Environment variable checks
+if (!process.env.MONGO_URI) {
+  console.error("ERROR: MONGO_URI not set in environment.");
+  process.exit(1);
+}
+
 // Connect to MongoDB
 connectDB();
 
@@ -33,27 +39,43 @@ if (!fs.existsSync(logDir)) {
 
 // Set up Winston logger
 const logger = winston.createLogger({
-  level: 'info',
+  level: "info",
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.json()
   ),
   transports: [
-    new winston.transports.File({ filename: path.join(logDir, 'error.log'), level: 'error' }),
-    new winston.transports.File({ filename: path.join(logDir, 'combined.log') }),
+    new winston.transports.File({
+      filename: path.join(logDir, "error.log"),
+      level: "error",
+    }),
+    new winston.transports.File({ filename: path.join(logDir, "combined.log") }),
     new winston.transports.Console(), // Log to console as well for visibility
   ],
+});
+
+// Handle uncaught exceptions and rejections
+process.on("uncaughtException", (error) => {
+  logger.error(`Uncaught Exception: ${error.message}`);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  logger.error(`Unhandled Rejection at: ${promise}, reason: ${reason}`);
 });
 
 // Middleware
 app.use(express.json()); // Parse incoming JSON requests
 app.use(helmet()); // Use Helmet to enhance security
-app.use(cors()); // Enable CORS for all routes
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || "*", // Set allowed domains from environment variable, fallback to all
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+})); // Enable CORS for all routes
 
 // Set up Morgan to use Winston for HTTP logging (log only errors)
-morgan.token('message', (req, res) => res.locals.errorMessage || '');
+morgan.token("message", (req, res) => res.locals.errorMessage || "");
 const httpLogger = morgan(
-  ':method :url :status :res[content-length] - :response-time ms',
+  ":method :url :status :res[content-length] - :response-time ms",
   {
     skip: (req, res) => res.statusCode < 400, // Log only errors (status codes >= 400)
     stream: {
@@ -66,13 +88,23 @@ app.use(httpLogger);
 // Serve favicon.ico
 app.use(
   "/favicon.ico",
-  express.static(path.join(__dirname, "public", "favicon.ico")),
+  express.static(path.join(__dirname, "public", "favicon.ico"))
 );
+
+// Health Check Endpoint
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "OK" });
+});
 
 // Routes
 app.use("/pistol/users", userRoutes); // New route for user management
 app.use("/pistol/sessions", sessionRoutes);
 app.use("/pistol/shots", shotRoutes);
+
+// Handle 404 errors (not found routes)
+app.use((req, res, next) => {
+  res.status(404).json({ error: "Route not found" });
+});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -88,14 +120,14 @@ const getAvailablePort = (startPort) => {
     const server = net.createServer();
     server.once("error", (err) => {
       if (err.code === "EADDRINUSE") {
-        port++;  // Try the next port if the current one is in use
+        port++; // Try the next port if the current one is in use
         checkPort(resolve, reject);
       } else {
-        reject(err);  // Reject if there is another error
+        reject(err); // Reject if there is another error
       }
     });
     server.once("listening", () => {
-      server.close(() => resolve(port));  // Resolve when a port is found
+      server.close(() => resolve(port)); // Resolve when a port is found
     });
     server.listen(port, "127.0.0.1");
   };
@@ -106,18 +138,20 @@ const getAvailablePort = (startPort) => {
 };
 
 // Start the server on an available port, starting from 3030
-getAvailablePort(3030).then((port) => {
-  const server = app.listen(port, () => {
-    logger.info(`Server started on port ${port}`);
-  });
-
-  // Graceful shutdown
-  process.on('SIGINT', () => {
-    server.close(() => {
-      logger.info('Server closed due to app termination');
-      process.exit(0);
+getAvailablePort(3030)
+  .then((port) => {
+    const server = app.listen(port, () => {
+      logger.info(`Server started on port ${port}`);
     });
+
+    // Graceful shutdown
+    process.on("SIGINT", () => {
+      server.close(() => {
+        logger.info("Server closed due to app termination");
+        process.exit(0);
+      });
+    });
+  })
+  .catch((err) => {
+    logger.error(`Error finding available port: ${err.message}`);
   });
-}).catch((err) => {
-  logger.error(`Error finding available port: ${err.message}`);
-});

@@ -1,18 +1,16 @@
-import mongoose from 'mongoose';
-
 const shotSchema = new mongoose.Schema({
     sessionId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Session',
         required: true,
     },
-    x: {
+    positionX: {
         type: Number,
-        required: true,
+        default: 0, // Default to 0 as per your requirements
     },
-    y: {
+    positionY: {
         type: Number,
-        required: true,
+        default: 0, // Default to 0 as per your requirements
     },
     score: {
         type: Number,
@@ -23,7 +21,3 @@ const shotSchema = new mongoose.Schema({
         default: Date.now,
     },
 });
-
-const Shot = mongoose.model('Shot', shotSchema);
-
-export { Shot };

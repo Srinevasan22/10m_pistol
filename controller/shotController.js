@@ -3,7 +3,12 @@ import { Shot } from '../model/shot.js';
 // Add a new shot
 export const addShot = async (req, res) => {
   try {
-    const shot = new Shot({ ...req.body, sessionId: req.params.sessionId });
+    const shot = new Shot({ 
+      ...req.body, 
+      sessionId: req.params.sessionId,
+      positionX: req.body.positionX || 0, // Default value for positionX
+      positionY: req.body.positionY || 0  // Default value for positionY
+    });
     await shot.save();
     res.status(201).json(shot);
   } catch (error) {
@@ -37,10 +42,18 @@ export const getShotById = async (req, res) => {
 // Update a shot by ID
 export const updateShot = async (req, res) => {
   try {
-    const shot = await Shot.findByIdAndUpdate(req.params.shotId, req.body, {
-      new: true,
-      runValidators: true,
-    });
+    const shot = await Shot.findByIdAndUpdate(
+      req.params.shotId, 
+      { 
+        ...req.body,
+        positionX: req.body.positionX || 0, // Default value for positionX
+        positionY: req.body.positionY || 0  // Default value for positionY
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
     if (!shot) {
       return res.status(404).json({ error: 'Shot not found' });
     }
@@ -66,8 +79,14 @@ export const deleteShot = async (req, res) => {
 // Add a new shot to the session
 export const addShotToSession = async (req, res) => {
   try {
-    const { sessionId, x, y, score } = req.body;
-    const newShot = new Shot({ sessionId, x, y, score });
+    const { sessionId, score } = req.body;
+    const newShot = new Shot({
+      sessionId,
+      positionX: req.body.positionX || 0, // Default value for positionX
+      positionY: req.body.positionY || 0, // Default value for positionY
+      score,
+      timestamp: new Date(), // Automatically set timestamp
+    });
     await newShot.save();
     res.status(201).json(newShot);
   } catch (error) {
