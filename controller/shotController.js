@@ -1,38 +1,42 @@
-import Shot from '../model/shot.js';  // Correct way to import a default export
+import Shot from '../model/shot.js';
+import Session from '../model/session.js';
 
 // Add a new shot
 export const addShot = async (req, res) => {
   try {
-    // Log the incoming request body to verify input
     console.log('Received request body:', req.body);
 
-    // Check if sessionId is present
     if (!req.params.sessionId) {
       console.log('No sessionId provided in request params');
       return res.status(400).json({ error: 'Session ID is required' });
     }
 
-    // Create a new Shot object
-    const shot = new Shot({ 
-      ...req.body, 
+    const shot = new Shot({
+      ...req.body,
       sessionId: req.params.sessionId,
-      positionX: req.body.positionX || 0, // Default value for positionX
-      positionY: req.body.positionY || 0  // Default value for positionY
+      positionX: req.body.positionX || 0,
+      positionY: req.body.positionY || 0,
     });
 
-    // Log shot details before saving
     console.log('Shot to be saved:', shot);
 
     // Save the shot to the database
     await shot.save();
 
-    // Log the successful save
-    console.log('Shot saved successfully:', shot);
+    // Add the saved shot to the session
+    const session = await Session.findById(req.params.sessionId);
+    if (!session) {
+      console.log('Session not found:', req.params.sessionId);
+      return res.status(404).json({ error: 'Session not found' });
+    }
 
-    // Respond with the saved shot
+    // Add the shot's ID to the session's shots array
+    session.shots.push(shot._id);
+    await session.save();
+
+    console.log('Shot saved and added to session successfully:', shot);
     res.status(201).json(shot);
   } catch (error) {
-    // Log the error details
     console.error('Error adding shot:', error.message);
     res.status(500).json({ error: error.message });
   }
@@ -71,11 +75,11 @@ export const updateShot = async (req, res) => {
   try {
     console.log('Updating shot with ID:', req.params.shotId);
     const shot = await Shot.findByIdAndUpdate(
-      req.params.shotId, 
-      { 
+      req.params.shotId,
+      {
         ...req.body,
         positionX: req.body.positionX || 0, // Default value for positionX
-        positionY: req.body.positionY || 0  // Default value for positionY
+        positionY: req.body.positionY || 0, // Default value for positionY
       },
       {
         new: true,
@@ -103,38 +107,14 @@ export const deleteShot = async (req, res) => {
       console.log('Shot not found for deletion:', req.params.shotId);
       return res.status(404).json({ error: 'Shot not found' });
     }
+
+    // Remove the shot reference from the session's shots array
+    await Session.findByIdAndUpdate(shot.sessionId, { $pull: { shots: req.params.shotId } });
+
     console.log('Shot deleted successfully:', req.params.shotId);
     res.json({ message: 'Shot deleted successfully' });
   } catch (error) {
     console.error('Error deleting shot:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-};
-
-// Add a new shot to the session
-export const addShotToSession = async (req, res) => {
-  try {
-    const { sessionId, score } = req.body;
-    if (!sessionId || !score) {
-      console.log('Missing sessionId or score in request body');
-      return res.status(400).json({ error: 'Session ID and score are required' });
-    }
-
-    const newShot = new Shot({
-      sessionId,
-      positionX: req.body.positionX || 0, // Default value for positionX
-      positionY: req.body.positionY || 0, // Default value for positionY
-      score,
-      timestamp: new Date(), // Automatically set timestamp
-    });
-
-    console.log('Adding new shot to session:', newShot);
-    await newShot.save();
-    console.log('New shot added successfully:', newShot);
-
-    res.status(201).json(newShot);
-  } catch (error) {
-    console.error('Error adding shot to session:', error.message);
     res.status(500).json({ error: error.message });
   }
 };
