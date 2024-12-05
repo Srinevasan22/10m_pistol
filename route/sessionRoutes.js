@@ -1,5 +1,6 @@
 import express from 'express';
-const router = express.Router();
+const router = express.Router({ mergeParams: true }); // Merge parent route parameters into the router
+
 import {
   addSession,
   getSessions,
@@ -36,6 +37,8 @@ router.put('/:sessionId', updateSession);
 // Route to delete a session by its ID for a specific user
 // @route DELETE /pistol/users/:userId/sessions/:sessionId
 router.delete('/:sessionId', deleteSession);
+
+// Routes for managing shots within a session for a specific user
 
 // Route to add a new shot to a session for a specific user
 // @route POST /pistol/users/:userId/sessions/:sessionId/shots

@@ -2,16 +2,26 @@ import express from "express";
 import {
   createUser,
   getAllUsers,
-  getUserById,       // Import getUserById
-  deleteUserById     // Import deleteUserById
+  getUserById,
+  deleteUserById,
 } from "../controller/userController.js";
+
+import { check } from "express-validator";
 
 const router = express.Router();
 
 // @desc    Create a new user
 // @route   POST /pistol/users
 // @access  Public
-router.post("/", createUser);
+router.post(
+  "/",
+  [
+    // Validate the username field
+    check("username", "Username is required").not().isEmpty(),
+    check("username", "Username must be a string").isString(),
+  ],
+  createUser
+);
 
 // @desc    Get all users
 // @route   GET /pistol/users

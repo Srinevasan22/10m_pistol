@@ -10,8 +10,14 @@ export const createUser = async (req, res) => {
     console.log("User created:", newUser); // Log the created user
     res.status(201).json(newUser);
   } catch (error) {
-    console.error("Error creating user:", error.message); // Log any errors
-    res.status(400).json({ message: "Failed to create user", error: error.message });
+    if (error.code === 11000) { // Duplicate key error code for MongoDB
+      res.status(400).json({
+        message: "Username already exists. Please choose a different username."
+      });
+    } else {
+      console.error("Error creating user:", error.message); // Log any other errors
+      res.status(400).json({ message: "Failed to create user", error: error.message });
+    }
   }
 };
 
