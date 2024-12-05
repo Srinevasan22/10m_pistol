@@ -24,7 +24,13 @@ const sessionSchema = new mongoose.Schema({
     shots: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Shot'
-    }]
+    }],
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true,
+    }
 });
 
-export const Session = mongoose.model('Session', sessionSchema);
+// Export as default
+export default mongoose.model('Session', sessionSchema);
