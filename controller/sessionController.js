@@ -1,5 +1,5 @@
-import Shot from '../model/shot.js';  // Correct way to import a default export
-import Session from '../model/session.js';  // Use the default export properly
+import Shot from '../model/shot.js';
+import Session from '../model/session.js';
 
 // Add a new shot
 export const addShot = async (req, res) => {
@@ -12,6 +12,15 @@ export const addShot = async (req, res) => {
       timestamp: new Date() // Automatically set timestamp
     });
     await shot.save();
+
+    // Add the shot's ID to the session's shots array
+    const session = await Session.findById(req.params.sessionId);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    session.shots.push(shot._id);
+    await session.save();
+
     res.status(201).json(shot);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -72,6 +81,10 @@ export const deleteShot = async (req, res) => {
     if (!shot) {
       return res.status(404).json({ error: 'Shot not found' });
     }
+
+    // Remove the shot reference from the session's shots array
+    await Session.findByIdAndUpdate(shot.sessionId, { $pull: { shots: req.params.shotId } });
+
     res.json({ message: 'Shot deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
