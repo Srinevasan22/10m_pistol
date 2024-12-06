@@ -21,6 +21,7 @@ router.use((req, res, next) => {
 });
 
 // Route to add a new shot to a specific session for a specific user
+// @route POST /users/:userId/sessions/:sessionId/shots
 router.post(
   '/users/:userId/sessions/:sessionId/shots',
   [
@@ -39,12 +40,14 @@ router.post(
 );
 
 // Route to get all shots by session ID for a specific user
+// @route GET /users/:userId/sessions/:sessionId/shots
 router.get('/users/:userId/sessions/:sessionId/shots', getShotsBySession);
 
 // Route to get a shot by its ID within a session for a specific user
+// @route GET /users/:userId/sessions/:sessionId/shots/:shotId
 router.get('/users/:userId/sessions/:sessionId/shots/:shotId', async (req, res) => {
   try {
-    const shot = await getShotById(req.params.shotId);
+    const shot = await getShotById(req, res);
     if (!shot) {
       return res.status(404).json({ message: 'Shot not found' });
     }
@@ -55,6 +58,7 @@ router.get('/users/:userId/sessions/:sessionId/shots/:shotId', async (req, res) 
 });
 
 // Route to update a shot by its ID within a session for a specific user
+// @route PUT /users/:userId/sessions/:sessionId/shots/:shotId
 router.put(
   '/users/:userId/sessions/:sessionId/shots/:shotId',
   [
@@ -71,7 +75,7 @@ router.put(
   },
   async (req, res) => {
     try {
-      const shot = await updateShot(req.params.shotId, req.body);
+      const shot = await updateShot(req, res);
       if (!shot) {
         return res.status(404).json({ message: 'Shot not found' });
       }
@@ -83,9 +87,10 @@ router.put(
 );
 
 // Route to delete a shot by its ID within a session for a specific user
+// @route DELETE /users/:userId/sessions/:sessionId/shots/:shotId
 router.delete('/users/:userId/sessions/:sessionId/shots/:shotId', async (req, res) => {
   try {
-    const result = await deleteShot(req.params.shotId);
+    const result = await deleteShot(req, res);
     if (!result) {
       return res.status(404).json({ message: 'Shot not found' });
     }
@@ -96,6 +101,7 @@ router.delete('/users/:userId/sessions/:sessionId/shots/:shotId', async (req, re
 });
 
 // NEW: Route to get all shots (irrespective of session or user)
+// @route GET /shots
 router.get('/', async (req, res) => {
   try {
     const shots = await Shot.find();

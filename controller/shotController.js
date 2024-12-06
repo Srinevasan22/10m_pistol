@@ -6,14 +6,15 @@ export const addShot = async (req, res) => {
   try {
     console.log('Received request body:', req.body);
 
-    if (!req.params.sessionId) {
-      console.log('No sessionId provided in request params');
-      return res.status(400).json({ error: 'Session ID is required' });
+    if (!req.params.sessionId || !req.params.userId) {
+      console.log('No sessionId or userId provided in request params');
+      return res.status(400).json({ error: 'Session ID and User ID are required' });
     }
 
     const shot = new Shot({
       ...req.body,
       sessionId: req.params.sessionId,
+      userId: req.params.userId,
       positionX: req.body.positionX || 0,
       positionY: req.body.positionY || 0,
     });
@@ -28,6 +29,11 @@ export const addShot = async (req, res) => {
     if (!session) {
       console.log('Session not found:', req.params.sessionId);
       return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Verify that the session's userId matches the provided userId
+    if (session.userId.toString() !== req.params.userId) {
+      return res.status(403).json({ error: 'Unauthorized to add a shot to this session' });
     }
 
     // Add the shot's ID to the session's shots array
@@ -46,7 +52,13 @@ export const addShot = async (req, res) => {
 export const getShotsBySession = async (req, res) => {
   try {
     console.log('Fetching shots for sessionId:', req.params.sessionId);
-    const shots = await Shot.find({ sessionId: req.params.sessionId });
+
+    // Verify userId is provided
+    if (!req.params.userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    const shots = await Shot.find({ sessionId: req.params.sessionId, userId: req.params.userId });
     res.json(shots);
   } catch (error) {
     console.error('Error fetching shots by session ID:', error.message);
@@ -59,10 +71,17 @@ export const getShotById = async (req, res) => {
   try {
     console.log('Fetching shot by shotId:', req.params.shotId);
     const shot = await Shot.findById(req.params.shotId);
+
     if (!shot) {
       console.log('Shot not found:', req.params.shotId);
       return res.status(404).json({ error: 'Shot not found' });
     }
+
+    // Verify that the shot belongs to the user
+    if (shot.userId.toString() !== req.params.userId) {
+      return res.status(403).json({ error: 'Unauthorized to view this shot' });
+    }
+
     res.json(shot);
   } catch (error) {
     console.error('Error fetching shot by ID:', error.message);
@@ -74,22 +93,26 @@ export const getShotById = async (req, res) => {
 export const updateShot = async (req, res) => {
   try {
     console.log('Updating shot with ID:', req.params.shotId);
-    const shot = await Shot.findByIdAndUpdate(
-      req.params.shotId,
-      {
-        ...req.body,
-        positionX: req.body.positionX || 0, // Default value for positionX
-        positionY: req.body.positionY || 0, // Default value for positionY
-      },
-      {
-        new: true,
-        runValidators: true,
-      }
-    );
+
+    const shot = await Shot.findById(req.params.shotId);
+
     if (!shot) {
       console.log('Shot not found for update:', req.params.shotId);
       return res.status(404).json({ error: 'Shot not found' });
     }
+
+    // Verify that the shot belongs to the user
+    if (shot.userId.toString() !== req.params.userId) {
+      return res.status(403).json({ error: 'Unauthorized to update this shot' });
+    }
+
+    shot.score = req.body.score || shot.score;
+    shot.positionX = req.body.positionX || shot.positionX;
+    shot.positionY = req.body.positionY || shot.positionY;
+    shot.timestamp = req.body.timestamp || shot.timestamp;
+
+    await shot.save();
+
     console.log('Shot updated successfully:', shot);
     res.json(shot);
   } catch (error) {
@@ -102,11 +125,19 @@ export const updateShot = async (req, res) => {
 export const deleteShot = async (req, res) => {
   try {
     console.log('Deleting shot with ID:', req.params.shotId);
-    const shot = await Shot.findByIdAndDelete(req.params.shotId);
+    const shot = await Shot.findById(req.params.shotId);
+
     if (!shot) {
       console.log('Shot not found for deletion:', req.params.shotId);
       return res.status(404).json({ error: 'Shot not found' });
     }
+
+    // Verify that the shot belongs to the user
+    if (shot.userId.toString() !== req.params.userId) {
+      return res.status(403).json({ error: 'Unauthorized to delete this shot' });
+    }
+
+    await shot.remove();
 
     // Remove the shot reference from the session's shots array
     await Session.findByIdAndUpdate(shot.sessionId, { $pull: { shots: req.params.shotId } });

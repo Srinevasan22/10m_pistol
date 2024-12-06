@@ -19,6 +19,13 @@ export const addShot = async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
     session.shots.push(shot._id);
+
+    // Update session statistics
+    session.totalShots += 1;
+    session.maxScore = Math.max(session.maxScore, shot.score);
+    session.minScore = session.minScore === 0 ? shot.score : Math.min(session.minScore, shot.score);
+    session.averageScore = ((session.averageScore * (session.totalShots - 1)) + shot.score) / session.totalShots;
+
     await session.save();
 
     res.status(201).json(shot);
@@ -68,6 +75,17 @@ export const updateShot = async (req, res) => {
     if (!shot) {
       return res.status(404).json({ error: 'Shot not found' });
     }
+
+    // Update session statistics after shot update
+    const session = await Session.findById(shot.sessionId).populate('shots');
+    if (session) {
+      session.totalShots = session.shots.length;
+      session.maxScore = Math.max(...session.shots.map(s => s.score));
+      session.minScore = Math.min(...session.shots.map(s => s.score));
+      session.averageScore = session.shots.reduce((acc, s) => acc + s.score, 0) / session.totalShots;
+      await session.save();
+    }
+
     res.json(shot);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -82,8 +100,20 @@ export const deleteShot = async (req, res) => {
       return res.status(404).json({ error: 'Shot not found' });
     }
 
-    // Remove the shot reference from the session's shots array
-    await Session.findByIdAndUpdate(shot.sessionId, { $pull: { shots: req.params.shotId } });
+    // Remove the shot reference from the session's shots array and update statistics
+    const session = await Session.findByIdAndUpdate(shot.sessionId, { $pull: { shots: req.params.shotId } });
+    if (session) {
+      // Recalculate session statistics
+      const updatedSession = await Session.findById(shot.sessionId).populate('shots');
+      updatedSession.totalShots = updatedSession.shots.length;
+      updatedSession.maxScore = updatedSession.shots.length ? Math.max(...updatedSession.shots.map(s => s.score)) : 0;
+      updatedSession.minScore = updatedSession.shots.length ? Math.min(...updatedSession.shots.map(s => s.score)) : 0;
+      updatedSession.averageScore = updatedSession.shots.length 
+        ? updatedSession.shots.reduce((acc, s) => acc + s.score, 0) / updatedSession.totalShots 
+        : 0;
+
+      await updatedSession.save();
+    }
 
     res.json({ message: 'Shot deleted successfully' });
   } catch (error) {
