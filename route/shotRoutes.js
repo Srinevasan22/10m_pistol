@@ -1,4 +1,4 @@
-import express from 'express';
+import express from "express";
 const router = express.Router();
 import {
   addShot,
@@ -6,13 +6,29 @@ import {
   getShotById,
   updateShot,
   deleteShot,
-} from '../controller/shotController.js';
-import Shot from '../model/shot.js'; // Correct import of Shot model
-import { check, validationResult } from 'express-validator';
+} from "../controller/shotController.js";
+import Shot from "../model/shot.js"; // Correct import of Shot model
+import { check, validationResult } from "express-validator";
+import mongoose from "mongoose"; // Import for ObjectId validation
+
+// Middleware to validate ObjectId
+const validateObjectId = (paramName) => {
+  return (req, res, next) => {
+    if (!mongoose.Types.ObjectId.isValid(req.params[paramName])) {
+      return res
+        .status(400)
+        .json({ error: `${paramName} is not a valid ObjectId` });
+    }
+    next();
+  };
+};
 
 // Middleware to add default values for positionX, positionY, and timestamp if not provided
 router.use((req, res, next) => {
-  if ((req.method === 'POST' || req.method === 'PUT') && req.body.score !== undefined) {
+  if (
+    (req.method === "POST" || req.method === "PUT") &&
+    req.body.score !== undefined
+  ) {
     req.body.positionX = req.body.positionX ?? 0;
     req.body.positionY = req.body.positionY ?? 0;
     req.body.timestamp = req.body.timestamp ?? new Date().toISOString();
@@ -23,11 +39,19 @@ router.use((req, res, next) => {
 // Route to add a new shot to a specific session for a specific user
 // @route POST /users/:userId/sessions/:sessionId/shots
 router.post(
-  '/users/:userId/sessions/:sessionId/shots',
+  "/users/:userId/sessions/:sessionId/shots",
   [
+    validateObjectId("userId"),
+    validateObjectId("sessionId"),
     // Validate the score field
-    check('score', 'Score is required and must be a number').isNumeric().not().isEmpty(),
-    check('score', 'Score must be between 0 and 10').isFloat({ min: 0, max: 10 }),
+    check("score", "Score is required and must be a number")
+      .isNumeric()
+      .not()
+      .isEmpty(),
+    check("score", "Score must be between 0 and 10").isFloat({
+      min: 0,
+      max: 10,
+    }),
   ],
   (req, res, next) => {
     const errors = validationResult(req);
@@ -36,35 +60,52 @@ router.post(
     }
     next();
   },
-  addShot
+  addShot,
 );
 
 // Route to get all shots by session ID for a specific user
 // @route GET /users/:userId/sessions/:sessionId/shots
-router.get('/users/:userId/sessions/:sessionId/shots', getShotsBySession);
+router.get(
+  "/users/:userId/sessions/:sessionId/shots",
+  [validateObjectId("userId"), validateObjectId("sessionId")],
+  getShotsBySession,
+);
 
 // Route to get a shot by its ID within a session for a specific user
 // @route GET /users/:userId/sessions/:sessionId/shots/:shotId
-router.get('/users/:userId/sessions/:sessionId/shots/:shotId', async (req, res) => {
-  try {
-    const shot = await getShotById(req, res);
-    if (!shot) {
-      return res.status(404).json({ message: 'Shot not found' });
+router.get(
+  "/users/:userId/sessions/:sessionId/shots/:shotId",
+  [
+    validateObjectId("userId"),
+    validateObjectId("sessionId"),
+    validateObjectId("shotId"),
+  ],
+  async (req, res) => {
+    try {
+      const shot = await getShotById(req, res);
+      if (!shot) {
+        return res.status(404).json({ message: "Shot not found" });
+      }
+      res.status(200).json(shot);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
     }
-    res.status(200).json(shot);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  },
+);
 
 // Route to update a shot by its ID within a session for a specific user
 // @route PUT /users/:userId/sessions/:sessionId/shots/:shotId
 router.put(
-  '/users/:userId/sessions/:sessionId/shots/:shotId',
+  "/users/:userId/sessions/:sessionId/shots/:shotId",
   [
+    validateObjectId("userId"),
+    validateObjectId("sessionId"),
+    validateObjectId("shotId"),
     // Validate the score field if it's present
-    check('score', 'Score must be a number').optional().isNumeric(),
-    check('score', 'Score must be between 0 and 10').optional().isFloat({ min: 0, max: 10 }),
+    check("score", "Score must be a number").optional().isNumeric(),
+    check("score", "Score must be between 0 and 10")
+      .optional()
+      .isFloat({ min: 0, max: 10 }),
   ],
   (req, res, next) => {
     const errors = validationResult(req);
@@ -77,32 +118,40 @@ router.put(
     try {
       const shot = await updateShot(req, res);
       if (!shot) {
-        return res.status(404).json({ message: 'Shot not found' });
+        return res.status(404).json({ message: "Shot not found" });
       }
       res.status(200).json(shot);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }
+  },
 );
 
 // Route to delete a shot by its ID within a session for a specific user
 // @route DELETE /users/:userId/sessions/:sessionId/shots/:shotId
-router.delete('/users/:userId/sessions/:sessionId/shots/:shotId', async (req, res) => {
-  try {
-    const result = await deleteShot(req, res);
-    if (!result) {
-      return res.status(404).json({ message: 'Shot not found' });
+router.delete(
+  "/users/:userId/sessions/:sessionId/shots/:shotId",
+  [
+    validateObjectId("userId"),
+    validateObjectId("sessionId"),
+    validateObjectId("shotId"),
+  ],
+  async (req, res) => {
+    try {
+      const result = await deleteShot(req, res);
+      if (!result) {
+        return res.status(404).json({ message: "Shot not found" });
+      }
+      res.status(200).json({ message: "Shot deleted successfully" });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
     }
-    res.status(200).json({ message: 'Shot deleted successfully' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  },
+);
 
 // NEW: Route to get all shots (irrespective of session or user)
 // @route GET /shots
-router.get('/', async (req, res) => {
+router.get("/debug/shots", async (req, res) => {
   try {
     const shots = await Shot.find();
     res.status(200).json(shots);
