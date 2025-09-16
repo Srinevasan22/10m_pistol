@@ -33,8 +33,9 @@ const sessionSchema = new mongoose.Schema({
 });
 
 // Method to populate shot details when retrieving session
-sessionSchema.methods.populateShots = function () {
-    return this.populate('shots').execPopulate();
+sessionSchema.methods.populateShots = async function () {
+    await this.populate('shots');
+    return this;
 };
 
 // Export as default
