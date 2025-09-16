@@ -32,22 +32,20 @@ const sessionSchema = new mongoose.Schema({
     }
 });
 
+// Method to populate shot details when retrieving session
 sessionSchema.methods.populateShots = async function populateShots({ userId } = {}) {
-    const session = this;
-
     const userObjectId = userId instanceof mongoose.Types.ObjectId
         ? userId
         : (mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : null);
 
-    await session.populate({
+    await this.populate({
         path: 'shots',
         match: userObjectId ? { userId: userObjectId } : undefined,
     });
 
-    const filteredShots = Array.isArray(session.shots) ? session.shots.filter(Boolean) : [];
-    session.set('shots', filteredShots);
+    this.shots = Array.isArray(this.shots) ? this.shots.filter(Boolean) : [];
 
-    return session;
+    return this;
 };
 
 // Export as default
