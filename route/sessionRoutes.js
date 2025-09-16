@@ -6,8 +6,7 @@ import {
   getSessions,
   getSessionById,
   updateSession,
-  deleteSession,
-  populateShots
+  deleteSession
 } from '../controller/sessionController.js';
 
 // Importing Shot controller
@@ -29,7 +28,7 @@ router.get('/', getSessions);
 
 // Route to get a session by its ID for a specific user
 // @route GET /pistol/users/:userId/sessions/:sessionId
-router.get('/:sessionId', populateShots, getSessionById);
+router.get('/:sessionId', getSessionById);
 
 // Route to update a session by its ID for a specific user
 // @route PUT /pistol/users/:userId/sessions/:sessionId
