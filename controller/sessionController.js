@@ -51,17 +51,15 @@ export const getSessionById = async (req, res) => {
       return res.status(400).json({ error: 'Invalid session or user identifier' });
     }
 
-    const sessionDoc = await Session.findOne({ _id: sessionObjectId, userId: userObjectId }).populate({
-      path: 'shots',
-      match: { userId: userObjectId },
-    });
+    const sessionDoc = await Session.findOne({ _id: sessionObjectId, userId: userObjectId });
 
     if (!sessionDoc) {
       return res.status(404).json({ error: 'Session not found' });
     }
 
+    await sessionDoc.populateShots({ userId: userObjectId });
+
     const session = sessionDoc.toObject({ virtuals: true });
-    session.shots = Array.isArray(session.shots) ? session.shots.filter(Boolean) : [];
     res.json(session);
   } catch (error) {
     res.status(500).json({ error: error.message });

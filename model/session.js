@@ -32,5 +32,23 @@ const sessionSchema = new mongoose.Schema({
     }
 });
 
+sessionSchema.methods.populateShots = async function populateShots({ userId } = {}) {
+    const session = this;
+
+    const userObjectId = userId instanceof mongoose.Types.ObjectId
+        ? userId
+        : (mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : null);
+
+    await session.populate({
+        path: 'shots',
+        match: userObjectId ? { userId: userObjectId } : undefined,
+    });
+
+    const filteredShots = Array.isArray(session.shots) ? session.shots.filter(Boolean) : [];
+    session.set('shots', filteredShots);
+
+    return session;
+};
+
 // Export as default
 export default mongoose.model('Session', sessionSchema);
