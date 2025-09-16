@@ -126,10 +126,18 @@ export const updateShot = async (req, res) => {
         .json({ error: "Unauthorized to update this shot" });
     }
 
-    shot.score = req.body.score || shot.score;
-    shot.positionX = req.body.positionX || shot.positionX;
-    shot.positionY = req.body.positionY || shot.positionY;
-    shot.timestamp = req.body.timestamp || shot.timestamp;
+    if (req.body.score !== undefined) {
+      shot.score = req.body.score;
+    }
+    if (req.body.positionX !== undefined) {
+      shot.positionX = req.body.positionX;
+    }
+    if (req.body.positionY !== undefined) {
+      shot.positionY = req.body.positionY;
+    }
+    if (req.body.timestamp !== undefined) {
+      shot.timestamp = req.body.timestamp;
+    }
 
     await shot.save();
 
