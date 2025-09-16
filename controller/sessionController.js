@@ -192,17 +192,3 @@ export const deleteSession = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
-// New function to populate shots in sessions
-export const populateShots = async (req, res) => {
-  try {
-    const { sessionId } = req.params;
-    const session = await Session.findById(sessionId).populate('shots');
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
-    }
-    res.json(session);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
