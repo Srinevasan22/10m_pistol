@@ -6,7 +6,7 @@ import {
   deleteUserById,
 } from "../controller/userController.js";
 
-import { check } from "express-validator";
+import { check, validationResult } from "express-validator";
 
 const router = express.Router();
 
@@ -20,6 +20,15 @@ router.post(
     check("username", "Username is required").not().isEmpty(),
     check("username", "Username must be a string").isString(),
   ],
+  (req, res, next) => {
+    const errors = validationResult(req);
+
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    return next();
+  },
   createUser
 );
 
