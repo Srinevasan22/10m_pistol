@@ -113,6 +113,62 @@ describe("shotController session statistics", () => {
     expect(updatedSession.minScore).toBe(10);
   });
 
+  it("allows updating shot values to zero", async () => {
+    const baseParams = {
+      sessionId: session._id.toString(),
+      userId: userId.toString(),
+    };
+
+    const initialTimestamp = new Date("2024-01-01T00:00:00Z");
+
+    const addRes = createMockResponse();
+    await addShot(
+      {
+        params: baseParams,
+        body: {
+          score: 5,
+          positionX: 4,
+          positionY: 6,
+          timestamp: initialTimestamp,
+        },
+      },
+      addRes,
+    );
+
+    const shot = await Shot.findOne({ sessionId: session._id });
+
+    const zeroTimestamp = new Date(0);
+
+    const updateRes = createMockResponse();
+    await updateShot(
+      {
+        params: {
+          shotId: shot._id.toString(),
+          userId: userId.toString(),
+        },
+        body: {
+          score: 0,
+          positionX: 0,
+          positionY: 0,
+          timestamp: zeroTimestamp,
+        },
+      },
+      updateRes,
+    );
+
+    const updatedShot = await Shot.findById(shot._id);
+    expect(updatedShot.score).toBe(0);
+    expect(updatedShot.positionX).toBe(0);
+    expect(updatedShot.positionY).toBe(0);
+    expect(updatedShot.timestamp.getTime()).toBe(zeroTimestamp.getTime());
+
+    const updatedSession = await Session.findById(session._id);
+    expect(updatedSession.totalShots).toBe(1);
+    expect(updatedSession.averageScore).toBe(0);
+    expect(updatedSession.maxScore).toBe(0);
+    expect(updatedSession.minScore).toBe(0);
+  });
+
   it("recalculates statistics when deleting shots", async () => {
     const baseParams = {
       sessionId: session._id.toString(),
