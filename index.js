@@ -18,17 +18,20 @@ dotenv.config();
 // Define __dirname for ES Module compatibility
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const isTestEnv = process.env.NODE_ENV === "test";
 
 // Environment variable checks
-if (!process.env.MONGO_URI) {
+if (!isTestEnv && !process.env.MONGO_URI) {
   console.error("ERROR: MONGO_URI not set in environment.");
   process.exit(1);
 }
 
-// Connect to MongoDB
-connectDB();
-
 const app = express();
+
+// Connect to MongoDB
+if (!isTestEnv) {
+  connectDB();
+}
 
 // Ensure logs directory exists
 const logDir = path.join(__dirname, "logs");
@@ -85,10 +88,8 @@ const httpLogger = morgan(
 app.use(httpLogger);
 
 // Serve favicon.ico
-app.use(
-  "/favicon.ico",
-  express.static(path.join(__dirname, "public", "favicon.ico"))
-);
+const publicDir = path.join(__dirname, "public");
+app.use(express.static(publicDir));
 
 // Health Check Endpoint
 app.get("/health", (req, res) => {
@@ -153,20 +154,24 @@ const getAvailablePort = (startPort) => {
 };
 
 // Start the server on an available port, starting from 3030
-getAvailablePort(3030)
-  .then((port) => {
-    const server = app.listen(port, () => {
-      logger.info(`Server started on port ${port}`);
-    });
-
-    // Graceful shutdown
-    process.on("SIGINT", () => {
-      server.close(() => {
-        logger.info("Server closed due to app termination");
-        process.exit(0);
+if (!isTestEnv) {
+  getAvailablePort(3030)
+    .then((port) => {
+      const server = app.listen(port, () => {
+        logger.info(`Server started on port ${port}`);
       });
+
+      // Graceful shutdown
+      process.on("SIGINT", () => {
+        server.close(() => {
+          logger.info("Server closed due to app termination");
+          process.exit(0);
+        });
+      });
+    })
+    .catch((err) => {
+      logger.error(`Error finding available port: ${err.message}`);
     });
-  })
-  .catch((err) => {
-    logger.error(`Error finding available port: ${err.message}`);
-  });
+}
+
+export default app;
