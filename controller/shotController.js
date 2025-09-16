@@ -1,6 +1,7 @@
 import Shot from "../model/shot.js";
 import Session from "../model/session.js";
 import mongoose from "mongoose"; // Ensure ObjectId conversion
+import { recalculateSessionStats } from "../util/sessionStats.js";
 
 // Add a new shot
 export const addShot = async (req, res) => {
@@ -44,6 +45,8 @@ export const addShot = async (req, res) => {
     // Add the shot's ID to the session's shots array
     session.shots.push(shot._id);
     await session.save();
+
+    await recalculateSessionStats(session._id);
 
     console.log("Shot saved and added to session successfully:", shot);
     res.status(201).json(shot);
@@ -130,6 +133,8 @@ export const updateShot = async (req, res) => {
 
     await shot.save();
 
+    await recalculateSessionStats(shot.sessionId);
+
     console.log("Shot updated successfully:", shot);
     res.json(shot);
   } catch (error) {
@@ -162,6 +167,8 @@ export const deleteShot = async (req, res) => {
     await Session.findByIdAndUpdate(shot.sessionId, {
       $pull: { shots: req.params.shotId },
     });
+
+    await recalculateSessionStats(shot.sessionId);
 
     console.log("Shot deleted successfully:", req.params.shotId);
     res.json({ message: "Shot deleted successfully" });
