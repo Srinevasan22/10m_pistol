@@ -11,10 +11,12 @@ import {
 } from "@jest/globals";
 import Shot from "../../model/shot.js";
 import Session from "../../model/session.js";
+import Target from "../../model/target.js";
 import {
   addShot,
   updateShot,
   deleteShot,
+  getShotsBySession,
 } from "../shotController.js";
 
 jest.setTimeout(60000);
@@ -43,6 +45,7 @@ describe("shotController session statistics", () => {
   beforeEach(async () => {
     await Shot.deleteMany({});
     await Session.deleteMany({});
+    await Target.deleteMany({});
     session = await Session.create({ userId });
   });
 
@@ -59,6 +62,7 @@ describe("shotController session statistics", () => {
       },
       body: {
         score: 9,
+        targetNumber: 1,
       },
     };
 
@@ -74,6 +78,11 @@ describe("shotController session statistics", () => {
     expect(updatedSession.averageScore).toBe(9);
     expect(updatedSession.maxScore).toBe(9);
     expect(updatedSession.minScore).toBe(9);
+
+    const targets = await Target.find({ sessionId: session._id });
+    expect(targets).toHaveLength(1);
+    expect(targets[0].targetNumber).toBe(1);
+    expect(targets[0].shots).toHaveLength(1);
   });
 
   it("persists target metadata when adding a shot", async () => {
@@ -104,6 +113,14 @@ describe("shotController session statistics", () => {
     expect(savedShot.targetNumber).toBe(metadata.targetNumber);
     expect(savedShot.targetShotIndex).toBe(metadata.targetShotIndex);
     expect(savedShot.targetShotNumber).toBe(metadata.targetShotNumber);
+
+    const target = await Target.findOne({
+      sessionId: session._id,
+      targetNumber: metadata.targetNumber,
+    });
+    expect(target).not.toBeNull();
+    expect(target.shots).toHaveLength(1);
+    expect(target.shots[0].toString()).toBe(savedShot._id.toString());
 
     expect(res.body.targetIndex).toBe(metadata.targetIndex);
     expect(res.body.targetNumber).toBe(metadata.targetNumber);
@@ -137,6 +154,14 @@ describe("shotController session statistics", () => {
     expect(savedData.targetShotIndex).toBe(1);
     expect(savedData.targetShotNumber).toBe(2);
 
+    const target = await Target.findOne({
+      sessionId: session._id,
+      targetNumber: 3,
+    });
+    expect(target).not.toBeNull();
+    expect(target.shots).toHaveLength(1);
+    expect(target.shots[0].toString()).toBe(savedShot._id.toString());
+
     expect(savedData.target_index).toBeUndefined();
     expect(savedData.target_no).toBeUndefined();
     expect(savedData.target_shot_index).toBeUndefined();
@@ -148,6 +173,47 @@ describe("shotController session statistics", () => {
     expect(res.body.targetShotNumber).toBe(2);
   });
 
+  it("groups shots by target when fetching session shots", async () => {
+    const params = {
+      sessionId: session._id.toString(),
+      userId: userId.toString(),
+    };
+
+    const firstShotRes = createMockResponse();
+    await addShot(
+      {
+        params,
+        body: { score: 6, targetNumber: 1 },
+      },
+      firstShotRes,
+    );
+
+    const secondShotRes = createMockResponse();
+    await addShot(
+      {
+        params,
+        body: { score: 8, targetNumber: 2 },
+      },
+      secondShotRes,
+    );
+
+    const res = createMockResponse();
+    await getShotsBySession(
+      {
+        params,
+      },
+      res,
+    );
+
+    expect(res.body).toHaveLength(2);
+    expect(res.body[0].targetNumber).toBe(1);
+    expect(res.body[0].shots).toHaveLength(1);
+    expect(res.body[0].shots[0].score).toBe(6);
+    expect(res.body[1].targetNumber).toBe(2);
+    expect(res.body[1].shots).toHaveLength(1);
+    expect(res.body[1].shots[0].score).toBe(8);
+  });
+
   it("recalculates statistics when updating a shot", async () => {
     const addReq = {
       params: {
@@ -156,6 +222,7 @@ describe("shotController session statistics", () => {
       },
       body: {
         score: 7,
+        targetNumber: 1,
       },
     };
 
@@ -171,6 +238,7 @@ describe("shotController session statistics", () => {
       },
       body: {
         score: 10,
+        targetNumber: 1,
       },
     };
 
@@ -183,6 +251,13 @@ describe("shotController session statistics", () => {
     expect(updatedSession.averageScore).toBe(10);
     expect(updatedSession.maxScore).toBe(10);
     expect(updatedSession.minScore).toBe(10);
+
+    const target = await Target.findOne({
+      sessionId: session._id,
+      targetNumber: 1,
+    });
+    expect(target).not.toBeNull();
+    expect(target.shots).toHaveLength(1);
   });
 
   it("allows updating shot values to zero", async () => {
@@ -202,6 +277,7 @@ describe("shotController session statistics", () => {
           positionX: 4,
           positionY: 6,
           timestamp: initialTimestamp,
+          targetNumber: 3,
         },
       },
       addRes,
@@ -239,6 +315,13 @@ describe("shotController session statistics", () => {
     expect(updatedSession.averageScore).toBe(0);
     expect(updatedSession.maxScore).toBe(0);
     expect(updatedSession.minScore).toBe(0);
+
+    const target = await Target.findOne({
+      sessionId: session._id,
+      targetNumber: 3,
+    });
+    expect(target).not.toBeNull();
+    expect(target.shots).toHaveLength(1);
   });
 
   it("updates target metadata when updating a shot", async () => {
@@ -289,6 +372,15 @@ describe("shotController session statistics", () => {
     expect(updatedShot.targetShotIndex).toBe(updateMetadata.targetShotIndex);
     expect(updatedShot.targetShotNumber).toBe(updateMetadata.targetShotNumber);
 
+    const targets = await Target.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+    expect(targets).toHaveLength(1);
+    expect(targets[0].targetNumber).toBe(updateMetadata.targetNumber);
+    expect(targets[0].shots).toHaveLength(1);
+    expect(targets[0].shots[0].toString()).toBe(updatedShot._id.toString());
+    expect(updatedShot.targetId.toString()).toBe(targets[0]._id.toString());
+
     expect(updateRes.body.targetIndex).toBe(updateMetadata.targetIndex);
     expect(updateRes.body.targetNumber).toBe(updateMetadata.targetNumber);
     expect(updateRes.body.targetShotIndex).toBe(updateMetadata.targetShotIndex);
@@ -305,7 +397,7 @@ describe("shotController session statistics", () => {
     await addShot(
       {
         params: baseParams,
-        body: { score: 5 },
+        body: { score: 5, targetNumber: 1 },
       },
       firstShotRes,
     );
@@ -314,7 +406,7 @@ describe("shotController session statistics", () => {
     await addShot(
       {
         params: baseParams,
-        body: { score: 9 },
+        body: { score: 9, targetNumber: 2 },
       },
       secondShotRes,
     );
@@ -340,6 +432,12 @@ describe("shotController session statistics", () => {
     expect(updatedSession.maxScore).toBe(9);
     expect(updatedSession.minScore).toBe(9);
 
+    let remainingTargets = await Target.find({ sessionId: session._id }).sort({
+      targetNumber: 1,
+    });
+    expect(remainingTargets).toHaveLength(1);
+    expect(remainingTargets[0].targetNumber).toBe(2);
+
     const deleteResSecond = createMockResponse();
     await deleteShot(
       {
@@ -357,5 +455,8 @@ describe("shotController session statistics", () => {
     expect(updatedSession.averageScore).toBe(0);
     expect(updatedSession.maxScore).toBe(0);
     expect(updatedSession.minScore).toBe(0);
+
+    remainingTargets = await Target.find({ sessionId: session._id });
+    expect(remainingTargets).toHaveLength(0);
   });
 });

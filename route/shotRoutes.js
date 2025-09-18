@@ -11,6 +11,25 @@ import Shot from "../model/shot.js"; // Correct import of Shot model
 import { check, validationResult } from "express-validator";
 import mongoose from "mongoose"; // Import for ObjectId validation
 
+const hasTargetNumberInput = (body = {}) => {
+  const targetNumberKeys = [
+    "targetNumber",
+    "target_number",
+    "targetNo",
+    "target_no",
+  ];
+  const targetIndexKeys = ["targetIndex", "target_index"];
+
+  return (
+    targetNumberKeys.some(
+      (key) => body[key] !== undefined && body[key] !== null,
+    ) ||
+    targetIndexKeys.some(
+      (key) => body[key] !== undefined && body[key] !== null,
+    )
+  );
+};
+
 // Middleware to validate ObjectId
 const validateObjectId = (paramName) => {
   return (req, res, next) => {
@@ -69,6 +88,12 @@ router.post(
       .isInt({ min: 0 }),
   ],
   (req, res, next) => {
+    if (!hasTargetNumberInput(req.body)) {
+      return res
+        .status(400)
+        .json({ error: "targetNumber is required to add a shot" });
+    }
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });

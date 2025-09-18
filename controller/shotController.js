@@ -1,59 +1,132 @@
+import mongoose from "mongoose";
 import Shot from "../model/shot.js";
 import Session from "../model/session.js";
-import mongoose from "mongoose"; // Ensure ObjectId conversion
+import Target from "../model/target.js";
 import { recalculateSessionStats } from "../util/sessionStats.js";
 import { normalizeTargetMetadata } from "../util/shotMetadata.js";
+
+const ensureTargetForSession = async ({ sessionId, userId, targetNumber }) => {
+  const normalizedSessionId = mongoose.Types.ObjectId(sessionId);
+  const normalizedUserId = mongoose.Types.ObjectId(userId);
+
+  let target = await Target.findOne({
+    sessionId: normalizedSessionId,
+    userId: normalizedUserId,
+    targetNumber,
+  });
+
+  if (!target) {
+    target = await Target.create({
+      targetNumber,
+      sessionId: normalizedSessionId,
+      userId: normalizedUserId,
+      shots: [],
+    });
+  }
+
+  await Session.findByIdAndUpdate(normalizedSessionId, {
+    $addToSet: { targets: target._id },
+  });
+
+  return target;
+};
+
+const cleanupTargetIfEmpty = async ({ targetId, sessionId }) => {
+  if (!targetId || !sessionId) {
+    return;
+  }
+
+  const target = await Target.findById(targetId);
+
+  if (target && target.shots.length === 0) {
+    await Target.deleteOne({ _id: targetId });
+    await Session.findByIdAndUpdate(sessionId, {
+      $pull: { targets: targetId },
+    });
+  }
+};
+
+const parseTargetNumber = (value) => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    return NaN;
+  }
+
+  return parsed;
+};
 
 // Add a new shot
 export const addShot = async (req, res) => {
   try {
-    console.log("Received request body:", req.body);
-
     if (!req.params.sessionId || !req.params.userId) {
-      console.log("No sessionId or userId provided in request params");
       return res
         .status(400)
         .json({ error: "Session ID and User ID are required" });
     }
 
+    if (
+      !mongoose.Types.ObjectId.isValid(req.params.sessionId) ||
+      !mongoose.Types.ObjectId.isValid(req.params.userId)
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Invalid session or user identifier" });
+    }
+
     const normalizedBody = normalizeTargetMetadata(req.body);
     const { positionX, positionY, timestamp, ...shotData } = normalizedBody;
 
-    const shot = new Shot({
-      ...shotData,
-      sessionId: mongoose.Types.ObjectId(req.params.sessionId),
-      userId: req.params.userId,
-      positionX: positionX ?? 0,
-      positionY: positionY ?? 0,
-      ...(timestamp !== undefined ? { timestamp } : {}),
-    });
+    const targetNumber = parseTargetNumber(normalizedBody.targetNumber);
 
-    console.log("Shot to be saved:", shot);
+    if (targetNumber === null || Number.isNaN(targetNumber)) {
+      return res.status(400).json({
+        error: "A non-negative targetNumber is required to add a shot",
+      });
+    }
 
-    // Save the shot to the database
-    await shot.save();
+    const sessionId = new mongoose.Types.ObjectId(req.params.sessionId);
+    const userId = new mongoose.Types.ObjectId(req.params.userId);
 
-    // Add the saved shot to the session
-    const session = await Session.findById(req.params.sessionId);
+    const session = await Session.findById(sessionId);
     if (!session) {
-      console.log("Session not found:", req.params.sessionId);
       return res.status(404).json({ error: "Session not found" });
     }
 
-    // Verify that the session's userId matches the provided userId
-    if (session.userId.toString() !== req.params.userId) {
+    if (session.userId.toString() !== userId.toString()) {
       return res
         .status(403)
         .json({ error: "Unauthorized to add a shot to this session" });
     }
 
-    // Add the shot's ID to the session's shots array
-    session.shots.push(shot._id);
-    await session.save();
+    const target = await ensureTargetForSession({
+      sessionId,
+      userId,
+      targetNumber,
+    });
+
+    const shot = new Shot({
+      ...shotData,
+      targetNumber,
+      sessionId,
+      userId,
+      targetId: target._id,
+      positionX: positionX ?? 0,
+      positionY: positionY ?? 0,
+      ...(timestamp !== undefined ? { timestamp } : {}),
+    });
+
+    await shot.save();
+
+    target.shots.push(shot._id);
+    await target.save();
 
     await recalculateSessionStats(session._id);
 
-    console.log("Shot saved and added to session successfully:", shot);
     res.status(201).json(shot);
   } catch (error) {
     console.error("Error adding shot:", error.message);
@@ -61,28 +134,36 @@ export const addShot = async (req, res) => {
   }
 };
 
-// Get all shots by session ID
+// Get all shots by session ID grouped by target
 export const getShotsBySession = async (req, res) => {
   try {
-    console.log(
-      "Fetching shots for sessionId:",
-      req.params.sessionId,
-      "and userId:",
-      req.params.userId,
-    );
-
-    // Verify userId is provided
     if (!req.params.userId) {
       return res.status(400).json({ error: "User ID is required" });
     }
 
-    const shots = await Shot.find({
-      sessionId: mongoose.Types.ObjectId(req.params.sessionId), // Ensure ObjectId conversion
-      userId: req.params.userId,
-    });
+    if (
+      !mongoose.Types.ObjectId.isValid(req.params.sessionId) ||
+      !mongoose.Types.ObjectId.isValid(req.params.userId)
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Invalid session or user identifier" });
+    }
 
-    console.log("Shots found:", shots);
-    res.json(shots);
+    const sessionId = new mongoose.Types.ObjectId(req.params.sessionId);
+    const userId = new mongoose.Types.ObjectId(req.params.userId);
+
+    const targets = await Target.find({
+      sessionId,
+      userId,
+    })
+      .sort({ targetNumber: 1 })
+      .populate({
+        path: "shots",
+        options: { sort: { timestamp: 1 } },
+      });
+
+    res.json(targets);
   } catch (error) {
     console.error("Error fetching shots by session ID:", error.message);
     res.status(500).json({ error: error.message });
@@ -92,15 +173,16 @@ export const getShotsBySession = async (req, res) => {
 // Get a shot by ID
 export const getShotById = async (req, res) => {
   try {
-    console.log("Fetching shot by shotId:", req.params.shotId);
+    if (!mongoose.Types.ObjectId.isValid(req.params.userId)) {
+      return res.status(400).json({ error: "Invalid user identifier" });
+    }
+
     const shot = await Shot.findById(req.params.shotId);
 
     if (!shot) {
-      console.log("Shot not found:", req.params.shotId);
       return res.status(404).json({ error: "Shot not found" });
     }
 
-    // Verify that the shot belongs to the user
     if (shot.userId.toString() !== req.params.userId) {
       return res.status(403).json({ error: "Unauthorized to view this shot" });
     }
@@ -115,16 +197,16 @@ export const getShotById = async (req, res) => {
 // Update a shot by ID
 export const updateShot = async (req, res) => {
   try {
-    console.log("Updating shot with ID:", req.params.shotId);
+    if (!mongoose.Types.ObjectId.isValid(req.params.userId)) {
+      return res.status(400).json({ error: "Invalid user identifier" });
+    }
 
     const shot = await Shot.findById(req.params.shotId);
 
     if (!shot) {
-      console.log("Shot not found for update:", req.params.shotId);
       return res.status(404).json({ error: "Shot not found" });
     }
 
-    // Verify that the shot belongs to the user
     if (shot.userId.toString() !== req.params.userId) {
       return res
         .status(403)
@@ -148,9 +230,6 @@ export const updateShot = async (req, res) => {
     if (Object.prototype.hasOwnProperty.call(normalizedBody, "targetIndex")) {
       shot.targetIndex = normalizedBody.targetIndex;
     }
-    if (Object.prototype.hasOwnProperty.call(normalizedBody, "targetNumber")) {
-      shot.targetNumber = normalizedBody.targetNumber;
-    }
     if (Object.prototype.hasOwnProperty.call(normalizedBody, "targetShotIndex")) {
       shot.targetShotIndex = normalizedBody.targetShotIndex;
     }
@@ -158,11 +237,47 @@ export const updateShot = async (req, res) => {
       shot.targetShotNumber = normalizedBody.targetShotNumber;
     }
 
+    if (Object.prototype.hasOwnProperty.call(normalizedBody, "targetNumber")) {
+      const nextTargetNumber = parseTargetNumber(normalizedBody.targetNumber);
+
+      if (nextTargetNumber === null || Number.isNaN(nextTargetNumber)) {
+        return res.status(400).json({
+          error: "A non-negative targetNumber is required when updating a shot",
+        });
+      }
+
+      if (nextTargetNumber !== shot.targetNumber) {
+        const previousTargetId = shot.targetId;
+
+        const target = await ensureTargetForSession({
+          sessionId: shot.sessionId,
+          userId: shot.userId,
+          targetNumber: nextTargetNumber,
+        });
+
+        await Target.findByIdAndUpdate(previousTargetId, {
+          $pull: { shots: shot._id },
+        });
+
+        target.shots.push(shot._id);
+        await target.save();
+
+        shot.targetId = target._id;
+        shot.targetNumber = target.targetNumber;
+
+        await cleanupTargetIfEmpty({
+          targetId: previousTargetId,
+          sessionId: shot.sessionId,
+        });
+      } else {
+        shot.targetNumber = nextTargetNumber;
+      }
+    }
+
     await shot.save();
 
     await recalculateSessionStats(shot.sessionId);
 
-    console.log("Shot updated successfully:", shot);
     res.json(shot);
   } catch (error) {
     console.error("Error updating shot:", error.message);
@@ -173,31 +288,35 @@ export const updateShot = async (req, res) => {
 // Delete a shot by ID
 export const deleteShot = async (req, res) => {
   try {
-    console.log("Deleting shot with ID:", req.params.shotId);
+    if (!mongoose.Types.ObjectId.isValid(req.params.userId)) {
+      return res.status(400).json({ error: "Invalid user identifier" });
+    }
+
     const shot = await Shot.findById(req.params.shotId);
 
     if (!shot) {
-      console.log("Shot not found for deletion:", req.params.shotId);
       return res.status(404).json({ error: "Shot not found" });
     }
 
-    // Verify that the shot belongs to the user
     if (shot.userId.toString() !== req.params.userId) {
       return res
         .status(403)
         .json({ error: "Unauthorized to delete this shot" });
     }
 
-    await shot.remove();
+    const targetId = shot.targetId;
+    const sessionId = shot.sessionId;
 
-    // Remove the shot reference from the session's shots array
-    await Session.findByIdAndUpdate(shot.sessionId, {
-      $pull: { shots: req.params.shotId },
+    await shot.deleteOne();
+
+    await Target.findByIdAndUpdate(targetId, {
+      $pull: { shots: shot._id },
     });
 
-    await recalculateSessionStats(shot.sessionId);
+    await cleanupTargetIfEmpty({ targetId, sessionId });
 
-    console.log("Shot deleted successfully:", req.params.shotId);
+    await recalculateSessionStats(sessionId);
+
     res.json({ message: "Shot deleted successfully" });
   } catch (error) {
     console.error("Error deleting shot:", error.message);
