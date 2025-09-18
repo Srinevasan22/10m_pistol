@@ -76,6 +76,78 @@ describe("shotController session statistics", () => {
     expect(updatedSession.minScore).toBe(9);
   });
 
+  it("persists target metadata when adding a shot", async () => {
+    const metadata = {
+      targetIndex: 1,
+      targetNumber: 2,
+      targetShotIndex: 4,
+      targetShotNumber: 5,
+    };
+
+    const req = {
+      params: {
+        sessionId: session._id.toString(),
+        userId: userId.toString(),
+      },
+      body: {
+        score: 8,
+        ...metadata,
+      },
+    };
+
+    const res = createMockResponse();
+
+    await addShot(req, res);
+
+    const savedShot = await Shot.findOne({ sessionId: session._id });
+    expect(savedShot.targetIndex).toBe(metadata.targetIndex);
+    expect(savedShot.targetNumber).toBe(metadata.targetNumber);
+    expect(savedShot.targetShotIndex).toBe(metadata.targetShotIndex);
+    expect(savedShot.targetShotNumber).toBe(metadata.targetShotNumber);
+
+    expect(res.body.targetIndex).toBe(metadata.targetIndex);
+    expect(res.body.targetNumber).toBe(metadata.targetNumber);
+    expect(res.body.targetShotIndex).toBe(metadata.targetShotIndex);
+    expect(res.body.targetShotNumber).toBe(metadata.targetShotNumber);
+  });
+
+  it("normalizes snake_case target metadata keys", async () => {
+    const req = {
+      params: {
+        sessionId: session._id.toString(),
+        userId: userId.toString(),
+      },
+      body: {
+        score: 7,
+        target_index: 2,
+        target_no: 3,
+        target_shot_index: 1,
+        target_shot_no: 2,
+      },
+    };
+
+    const res = createMockResponse();
+    await addShot(req, res);
+
+    const savedShot = await Shot.findOne({ sessionId: session._id });
+    const savedData = savedShot.toObject();
+
+    expect(savedData.targetIndex).toBe(2);
+    expect(savedData.targetNumber).toBe(3);
+    expect(savedData.targetShotIndex).toBe(1);
+    expect(savedData.targetShotNumber).toBe(2);
+
+    expect(savedData.target_index).toBeUndefined();
+    expect(savedData.target_no).toBeUndefined();
+    expect(savedData.target_shot_index).toBeUndefined();
+    expect(savedData.target_shot_no).toBeUndefined();
+
+    expect(res.body.targetIndex).toBe(2);
+    expect(res.body.targetNumber).toBe(3);
+    expect(res.body.targetShotIndex).toBe(1);
+    expect(res.body.targetShotNumber).toBe(2);
+  });
+
   it("recalculates statistics when updating a shot", async () => {
     const addReq = {
       params: {
@@ -167,6 +239,60 @@ describe("shotController session statistics", () => {
     expect(updatedSession.averageScore).toBe(0);
     expect(updatedSession.maxScore).toBe(0);
     expect(updatedSession.minScore).toBe(0);
+  });
+
+  it("updates target metadata when updating a shot", async () => {
+    const addRes = createMockResponse();
+
+    await addShot(
+      {
+        params: {
+          sessionId: session._id.toString(),
+          userId: userId.toString(),
+        },
+        body: {
+          score: 6,
+          targetIndex: 0,
+          targetNumber: 1,
+          targetShotIndex: 0,
+          targetShotNumber: 1,
+        },
+      },
+      addRes,
+    );
+
+    const shot = await Shot.findOne({ sessionId: session._id });
+
+    const updateMetadata = {
+      targetIndex: 3,
+      targetNumber: 4,
+      targetShotIndex: 2,
+      targetShotNumber: 3,
+    };
+
+    const updateRes = createMockResponse();
+
+    await updateShot(
+      {
+        params: {
+          shotId: shot._id.toString(),
+          userId: userId.toString(),
+        },
+        body: updateMetadata,
+      },
+      updateRes,
+    );
+
+    const updatedShot = await Shot.findById(shot._id);
+    expect(updatedShot.targetIndex).toBe(updateMetadata.targetIndex);
+    expect(updatedShot.targetNumber).toBe(updateMetadata.targetNumber);
+    expect(updatedShot.targetShotIndex).toBe(updateMetadata.targetShotIndex);
+    expect(updatedShot.targetShotNumber).toBe(updateMetadata.targetShotNumber);
+
+    expect(updateRes.body.targetIndex).toBe(updateMetadata.targetIndex);
+    expect(updateRes.body.targetNumber).toBe(updateMetadata.targetNumber);
+    expect(updateRes.body.targetShotIndex).toBe(updateMetadata.targetShotIndex);
+    expect(updateRes.body.targetShotNumber).toBe(updateMetadata.targetShotNumber);
   });
 
   it("recalculates statistics when deleting shots", async () => {

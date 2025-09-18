@@ -17,6 +17,26 @@ const shotSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  targetIndex: {
+    type: Number,
+    min: 0,
+    default: null,
+  },
+  targetNumber: {
+    type: Number,
+    min: 0,
+    default: null,
+  },
+  targetShotIndex: {
+    type: Number,
+    min: 0,
+    default: null,
+  },
+  targetShotNumber: {
+    type: Number,
+    min: 0,
+    default: null,
+  },
   sessionId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Session',

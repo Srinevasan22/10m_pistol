@@ -2,6 +2,7 @@ import Shot from "../model/shot.js";
 import Session from "../model/session.js";
 import mongoose from "mongoose"; // Ensure ObjectId conversion
 import { recalculateSessionStats } from "../util/sessionStats.js";
+import { normalizeTargetMetadata } from "../util/shotMetadata.js";
 
 // Add a new shot
 export const addShot = async (req, res) => {
@@ -15,12 +16,16 @@ export const addShot = async (req, res) => {
         .json({ error: "Session ID and User ID are required" });
     }
 
+    const normalizedBody = normalizeTargetMetadata(req.body);
+    const { positionX, positionY, timestamp, ...shotData } = normalizedBody;
+
     const shot = new Shot({
-      ...req.body,
+      ...shotData,
       sessionId: mongoose.Types.ObjectId(req.params.sessionId),
       userId: req.params.userId,
-      positionX: req.body.positionX || 0,
-      positionY: req.body.positionY || 0,
+      positionX: positionX ?? 0,
+      positionY: positionY ?? 0,
+      ...(timestamp !== undefined ? { timestamp } : {}),
     });
 
     console.log("Shot to be saved:", shot);
@@ -126,17 +131,31 @@ export const updateShot = async (req, res) => {
         .json({ error: "Unauthorized to update this shot" });
     }
 
-    if (req.body.score !== undefined) {
-      shot.score = req.body.score;
+    const normalizedBody = normalizeTargetMetadata(req.body);
+
+    if (normalizedBody.score !== undefined) {
+      shot.score = normalizedBody.score;
     }
-    if (req.body.positionX !== undefined) {
-      shot.positionX = req.body.positionX;
+    if (normalizedBody.positionX !== undefined) {
+      shot.positionX = normalizedBody.positionX;
     }
-    if (req.body.positionY !== undefined) {
-      shot.positionY = req.body.positionY;
+    if (normalizedBody.positionY !== undefined) {
+      shot.positionY = normalizedBody.positionY;
     }
-    if (req.body.timestamp !== undefined) {
-      shot.timestamp = req.body.timestamp;
+    if (normalizedBody.timestamp !== undefined) {
+      shot.timestamp = normalizedBody.timestamp;
+    }
+    if (Object.prototype.hasOwnProperty.call(normalizedBody, "targetIndex")) {
+      shot.targetIndex = normalizedBody.targetIndex;
+    }
+    if (Object.prototype.hasOwnProperty.call(normalizedBody, "targetNumber")) {
+      shot.targetNumber = normalizedBody.targetNumber;
+    }
+    if (Object.prototype.hasOwnProperty.call(normalizedBody, "targetShotIndex")) {
+      shot.targetShotIndex = normalizedBody.targetShotIndex;
+    }
+    if (Object.prototype.hasOwnProperty.call(normalizedBody, "targetShotNumber")) {
+      shot.targetShotNumber = normalizedBody.targetShotNumber;
     }
 
     await shot.save();

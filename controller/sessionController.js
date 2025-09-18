@@ -1,15 +1,19 @@
 import Shot from '../model/shot.js';
 import Session from '../model/session.js';
+import { normalizeTargetMetadata } from '../util/shotMetadata.js';
 
 // Add a new shot
 export const addShot = async (req, res) => {
   try {
-    const shot = new Shot({ 
-      ...req.body, 
+    const normalizedBody = normalizeTargetMetadata(req.body);
+    const { positionX, positionY, timestamp, ...shotData } = normalizedBody;
+
+    const shot = new Shot({
+      ...shotData,
       sessionId: req.params.sessionId,
-      positionX: req.body.positionX || 0, // Default value for positionX
-      positionY: req.body.positionY || 0, // Default value for positionY
-      timestamp: new Date() // Automatically set timestamp
+      positionX: positionX ?? 0, // Default value for positionX
+      positionY: positionY ?? 0, // Default value for positionY
+      ...(timestamp !== undefined ? { timestamp } : { timestamp: new Date() })
     });
     await shot.save();
 
@@ -60,13 +64,22 @@ export const getShotById = async (req, res) => {
 // Update a shot by ID
 export const updateShot = async (req, res) => {
   try {
+    const normalizedBody = normalizeTargetMetadata(req.body);
+    const { positionX, positionY, timestamp, ...updateData } = normalizedBody;
+
+    if (positionX !== undefined) {
+      updateData.positionX = positionX;
+    }
+    if (positionY !== undefined) {
+      updateData.positionY = positionY;
+    }
+    if (timestamp !== undefined) {
+      updateData.timestamp = timestamp;
+    }
+
     const shot = await Shot.findByIdAndUpdate(
       req.params.shotId,
-      { 
-        ...req.body,
-        positionX: req.body.positionX || 0, // Default value for positionX
-        positionY: req.body.positionY || 0  // Default value for positionY
-      },
+      updateData,
       {
         new: true,
         runValidators: true,
