@@ -34,5 +34,12 @@ export const normalizeTargetMetadata = (payload = {}) => {
     }
   }
 
+  if (
+    !Object.prototype.hasOwnProperty.call(normalized, "targetNumber") &&
+    Object.prototype.hasOwnProperty.call(normalized, "targetIndex")
+  ) {
+    normalized.targetNumber = normalized.targetIndex;
+  }
+
   return normalized;
 };

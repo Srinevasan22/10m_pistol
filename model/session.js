@@ -21,10 +21,15 @@ const sessionSchema = new mongoose.Schema({
         type: Number,
         default: 0,
     },
-    shots: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Shot'
-    }],
+    targets: {
+        type: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Target',
+            },
+        ],
+        default: [],
+    },
     userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
@@ -32,9 +37,16 @@ const sessionSchema = new mongoose.Schema({
     }
 });
 
-// Method to populate shot details when retrieving session
-sessionSchema.methods.populateShots = async function () {
-    await this.populate('shots');
+// Method to populate target and shot details when retrieving session
+sessionSchema.methods.populateTargets = async function () {
+    await this.populate({
+        path: 'targets',
+        options: { sort: { targetNumber: 1 } },
+        populate: {
+            path: 'shots',
+            options: { sort: { timestamp: 1 } },
+        },
+    });
     return this;
 };
 

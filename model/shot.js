@@ -17,6 +17,11 @@ const shotSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  targetId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Target',
+    required: true,
+  },
   targetIndex: {
     type: Number,
     min: 0,
