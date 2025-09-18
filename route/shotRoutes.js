@@ -52,6 +52,21 @@ router.post(
       min: 0,
       max: 10,
     }),
+    check("targetIndex", "targetIndex must be a non-negative integer")
+      .optional({ nullable: true })
+      .isInt({ min: 0 }),
+    check("targetNumber", "targetNumber must be a non-negative integer")
+      .optional({ nullable: true })
+      .isInt({ min: 0 }),
+    check("targetShotIndex", "targetShotIndex must be a non-negative integer")
+      .optional({ nullable: true })
+      .isInt({ min: 0 }),
+    check(
+      "targetShotNumber",
+      "targetShotNumber must be a non-negative integer",
+    )
+      .optional({ nullable: true })
+      .isInt({ min: 0 }),
   ],
   (req, res, next) => {
     const errors = validationResult(req);
@@ -106,6 +121,21 @@ router.put(
     check("score", "Score must be between 0 and 10")
       .optional()
       .isFloat({ min: 0, max: 10 }),
+    check("targetIndex", "targetIndex must be a non-negative integer")
+      .optional({ nullable: true })
+      .isInt({ min: 0 }),
+    check("targetNumber", "targetNumber must be a non-negative integer")
+      .optional({ nullable: true })
+      .isInt({ min: 0 }),
+    check("targetShotIndex", "targetShotIndex must be a non-negative integer")
+      .optional({ nullable: true })
+      .isInt({ min: 0 }),
+    check(
+      "targetShotNumber",
+      "targetShotNumber must be a non-negative integer",
+    )
+      .optional({ nullable: true })
+      .isInt({ min: 0 }),
   ],
   (req, res, next) => {
     const errors = validationResult(req);
