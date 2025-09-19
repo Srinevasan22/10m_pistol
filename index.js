@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import connectDB from "./util/db.js";
 import sessionRoutes from "./route/sessionRoutes.js";
 import userRoutes from "./route/userRoutes.js";
+import legacyShotRoutes from "./route/legacyShotRoutes.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
@@ -101,6 +102,10 @@ app.use("/pistol/users", userRoutes); // Base route for users
 
 // Nested session and shot routes to include userId
 app.use("/pistol/users/:userId/sessions", sessionRoutes);
+
+// Backward-compatible routes for clients that have not adopted the nested
+// userId structure yet. These endpoints infer the userId from the session.
+app.use("/pistol/sessions", legacyShotRoutes);
 
 // Handle 404 errors (not found routes)
 app.use((req, res, next) => {
