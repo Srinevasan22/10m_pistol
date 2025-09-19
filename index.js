@@ -69,6 +69,11 @@ process.on("unhandledRejection", (reason, promise) => {
 
 // Middleware
 app.use(express.json()); // Parse incoming JSON requests
+app.use(
+  express.urlencoded({
+    extended: true,
+  }),
+); // Parse application/x-www-form-urlencoded payloads (e.g., HTML forms)
 app.use(helmet()); // Use Helmet to enhance security
 app.use(cors({
   origin: process.env.CORS_ORIGIN || "*", // Set allowed domains from environment variable, fallback to all
