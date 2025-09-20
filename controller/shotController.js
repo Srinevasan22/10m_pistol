@@ -72,6 +72,50 @@ const cleanupTargetIfEmpty = async ({ targetId, sessionId }) => {
   }
 };
 
+const tryDeleteTargetFromShotRequest = async (req, res) => {
+  const { shotId, userId, sessionId } = req.params ?? {};
+
+  if (!shotId || !mongoose.Types.ObjectId.isValid(shotId)) {
+    return false;
+  }
+
+  const target = await Target.findById(shotId);
+
+  if (!target) {
+    return false;
+  }
+
+  if (target.userId.toString() !== userId) {
+    res.status(403).json({ error: "Unauthorized to delete this target" });
+    return true;
+  }
+
+  if (sessionId) {
+    if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+      res.status(400).json({ error: "Invalid session identifier" });
+      return true;
+    }
+
+    if (target.sessionId.toString() !== sessionId) {
+      res.status(404).json({ error: "Target not found" });
+      return true;
+    }
+  }
+
+  await Shot.deleteMany({ targetId: target._id });
+
+  await Session.findByIdAndUpdate(target.sessionId, {
+    $pull: { targets: target._id },
+  });
+
+  await target.deleteOne();
+
+  await recalculateSessionStats(target.sessionId);
+
+  res.status(200).json({ message: "Target deleted successfully" });
+  return true;
+};
+
 const parseTargetNumber = (value) => {
   if (value === undefined || value === null) {
     return null;
@@ -318,9 +362,20 @@ export const deleteShot = async (req, res) => {
       return res.status(400).json({ error: "Invalid user identifier" });
     }
 
-    const shot = await Shot.findById(req.params.shotId);
+    const { shotId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(shotId)) {
+      return res.status(400).json({ error: "Invalid shot identifier" });
+    }
+
+    const shot = await Shot.findById(shotId);
 
     if (!shot) {
+      const handled = await tryDeleteTargetFromShotRequest(req, res);
+      if (handled) {
+        return;
+      }
+
       return res.status(404).json({ error: "Shot not found" });
     }
 
@@ -343,7 +398,7 @@ export const deleteShot = async (req, res) => {
 
     await recalculateSessionStats(sessionId);
 
-    res.json({ message: "Shot deleted successfully" });
+    res.status(200).json({ message: "Shot deleted successfully" });
   } catch (error) {
     console.error("Error deleting shot:", error.message);
     res.status(500).json({ error: error.message });
