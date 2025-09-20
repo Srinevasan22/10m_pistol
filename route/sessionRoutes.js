@@ -21,6 +21,7 @@ import {
 import {
   createTarget,
   listTargets,
+  reorderTargets,
   updateTarget,
   deleteTarget,
 } from '../controller/targetController.js';
@@ -58,6 +59,13 @@ router.get('/:sessionId/targets', listTargets);
 // Route to update a target within a session for a specific user
 // @route PUT /pistol/users/:userId/sessions/:sessionId/targets/:targetId
 router.put('/:sessionId/targets/:targetId', updateTarget);
+
+// Route to reorder targets within a session for a specific user
+// @route PATCH /pistol/users/:userId/sessions/:sessionId/targets/reorder
+router.patch('/:sessionId/targets/reorder', reorderTargets);
+
+// Support PUT requests for clients that use PUT semantics for reordering
+router.put('/:sessionId/targets/reorder', reorderTargets);
 
 // Route to delete a target within a session for a specific user
 // @route DELETE /pistol/users/:userId/sessions/:sessionId/targets/:targetId

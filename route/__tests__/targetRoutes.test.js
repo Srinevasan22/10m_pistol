@@ -158,6 +158,95 @@ describe("/targets routes", () => {
     expect(secondShotAfter.targetNumber).toBe(1);
   });
 
+  it("reorders targets via the API and updates related shots", async () => {
+    const firstTarget = await Target.create({
+      targetNumber: 1,
+      sessionId: session._id,
+      userId: user._id,
+      shots: [],
+    });
+    const secondTarget = await Target.create({
+      targetNumber: 2,
+      sessionId: session._id,
+      userId: user._id,
+      shots: [],
+    });
+    const thirdTarget = await Target.create({
+      targetNumber: 3,
+      sessionId: session._id,
+      userId: user._id,
+      shots: [],
+    });
+
+    session.targets.push(firstTarget._id, secondTarget._id, thirdTarget._id);
+    await session.save();
+
+    const firstShot = await Shot.create({
+      score: 8,
+      sessionId: session._id,
+      userId: user._id,
+      targetId: firstTarget._id,
+      targetNumber: 1,
+    });
+    const secondShot = await Shot.create({
+      score: 9,
+      sessionId: session._id,
+      userId: user._id,
+      targetId: secondTarget._id,
+      targetNumber: 2,
+    });
+    const thirdShot = await Shot.create({
+      score: 7,
+      sessionId: session._id,
+      userId: user._id,
+      targetId: thirdTarget._id,
+      targetNumber: 3,
+    });
+
+    firstTarget.shots.push(firstShot._id);
+    secondTarget.shots.push(secondShot._id);
+    thirdTarget.shots.push(thirdShot._id);
+    await Promise.all([firstTarget.save(), secondTarget.save(), thirdTarget.save()]);
+
+    const res = await request(app)
+      .patch(
+        `/pistol/users/${user._id.toString()}/sessions/${session._id.toString()}/targets/reorder`,
+      )
+      .send({
+        targetOrder: [
+          thirdTarget._id.toString(),
+          firstTarget._id.toString(),
+          secondTarget._id.toString(),
+        ],
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(3);
+    expect(res.body.map((target) => target._id)).toEqual([
+      thirdTarget._id.toString(),
+      firstTarget._id.toString(),
+      secondTarget._id.toString(),
+    ]);
+    expect(res.body.map((target) => target.targetNumber)).toEqual([1, 2, 3]);
+
+    const updatedShots = await Promise.all([
+      Shot.findById(firstShot._id),
+      Shot.findById(secondShot._id),
+      Shot.findById(thirdShot._id),
+    ]);
+
+    expect(updatedShots[0].targetNumber).toBe(2);
+    expect(updatedShots[1].targetNumber).toBe(3);
+    expect(updatedShots[2].targetNumber).toBe(1);
+
+    const sessionDoc = await Session.findById(session._id);
+    expect(sessionDoc.targets.map((id) => id.toString())).toEqual([
+      thirdTarget._id.toString(),
+      firstTarget._id.toString(),
+      secondTarget._id.toString(),
+    ]);
+  });
+
   it("deletes targets, removes references, and recalculates stats", async () => {
     const target = await Target.create({
       targetNumber: 6,

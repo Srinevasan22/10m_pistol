@@ -19,6 +19,22 @@ const parseTargetNumber = (value) => {
   return parsed;
 };
 
+const toObjectId = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof mongoose.Types.ObjectId) {
+    return value;
+  }
+
+  if (typeof value === "string" && mongoose.Types.ObjectId.isValid(value)) {
+    return new mongoose.Types.ObjectId(value);
+  }
+
+  return null;
+};
+
 const validateOwnership = async ({ sessionId, userId }) => {
   const session = await Session.findById(sessionId);
 
@@ -278,6 +294,153 @@ export const deleteTarget = async (req, res) => {
     return res.json({ message: "Target deleted successfully" });
   } catch (error) {
     console.error("Error deleting target:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+export const reorderTargets = async (req, res) => {
+  try {
+    const { sessionId, userId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(sessionId) || !mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "Invalid session or user identifier" });
+    }
+
+    const normalizedSessionId = new mongoose.Types.ObjectId(sessionId);
+    const normalizedUserId = new mongoose.Types.ObjectId(userId);
+
+    const { status, error } = await validateOwnership({
+      sessionId: normalizedSessionId,
+      userId: normalizedUserId,
+    });
+
+    if (error) {
+      return res.status(status).json({ error });
+    }
+
+    if (!req.body || !Object.prototype.hasOwnProperty.call(req.body, "targetOrder")) {
+      return res
+        .status(400)
+        .json({ error: "targetOrder is required to reorder targets" });
+    }
+
+    if (!Array.isArray(req.body.targetOrder)) {
+      return res
+        .status(400)
+        .json({ error: "targetOrder must be an array of target identifiers" });
+    }
+
+    const normalizedTargetIds = req.body.targetOrder
+      .map((value) => toObjectId(value))
+      .filter((value) => value !== null);
+
+    if (normalizedTargetIds.length !== req.body.targetOrder.length) {
+      return res
+        .status(400)
+        .json({ error: "targetOrder contains an invalid target identifier" });
+    }
+
+    const existingTargets = await Target.find({
+      sessionId: normalizedSessionId,
+      userId: normalizedUserId,
+    })
+      .select({ _id: 1 })
+      .lean();
+
+    if (existingTargets.length === 0) {
+      await Session.findByIdAndUpdate(normalizedSessionId, { $set: { targets: [] } });
+      return res.json([]);
+    }
+
+    if (normalizedTargetIds.length === 0) {
+      return res
+        .status(400)
+        .json({ error: "targetOrder must include at least one target" });
+    }
+
+    if (normalizedTargetIds.length !== existingTargets.length) {
+      return res
+        .status(400)
+        .json({ error: "targetOrder must include all targets for the session" });
+    }
+
+    const existingTargetIds = new Set(existingTargets.map((target) => target._id.toString()));
+    const requestedTargetIds = normalizedTargetIds.map((id) => id.toString());
+
+    if (new Set(requestedTargetIds).size !== requestedTargetIds.length) {
+      return res.status(400).json({ error: "targetOrder must not contain duplicates" });
+    }
+
+    const unknownTargetId = requestedTargetIds.find(
+      (targetId) => !existingTargetIds.has(targetId),
+    );
+
+    if (unknownTargetId) {
+      return res.status(400).json({ error: "targetOrder includes an unknown target" });
+    }
+
+    const temporaryStart = normalizedTargetIds.length + 1;
+
+    const bumpOperations = normalizedTargetIds.map((targetId, index) => ({
+      updateOne: {
+        filter: {
+          _id: targetId,
+          sessionId: normalizedSessionId,
+          userId: normalizedUserId,
+        },
+        update: { $set: { targetNumber: temporaryStart + index } },
+      },
+    }));
+
+    if (bumpOperations.length > 0) {
+      await Target.bulkWrite(bumpOperations);
+    }
+
+    const resequenceOperations = normalizedTargetIds.map((targetId, index) => ({
+      updateOne: {
+        filter: {
+          _id: targetId,
+          sessionId: normalizedSessionId,
+          userId: normalizedUserId,
+        },
+        update: { $set: { targetNumber: index + 1 } },
+      },
+    }));
+
+    if (resequenceOperations.length > 0) {
+      await Target.bulkWrite(resequenceOperations);
+    }
+
+    await Promise.all(
+      normalizedTargetIds.map((targetId, index) =>
+        Shot.updateMany(
+          {
+            targetId,
+            sessionId: normalizedSessionId,
+            userId: normalizedUserId,
+          },
+          { $set: { targetNumber: index + 1 } },
+        ),
+      ),
+    );
+
+    await Session.findByIdAndUpdate(normalizedSessionId, {
+      $set: { targets: normalizedTargetIds },
+    });
+
+    const updatedTargets = await Target.find({
+      sessionId: normalizedSessionId,
+      userId: normalizedUserId,
+    })
+      .sort({ targetNumber: 1 })
+      .populate({
+        path: "shots",
+        options: { sort: { timestamp: 1 } },
+      });
+
+    return res.json(updatedTargets);
+  } catch (error) {
+    console.error("Error reordering targets:", error.message);
     return res.status(500).json({ error: error.message });
   }
 };
