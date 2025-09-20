@@ -1,0 +1,280 @@
+import mongoose from "mongoose";
+import { MongoMemoryServer } from "mongodb-memory-server";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+} from "@jest/globals";
+
+import Target from "../../model/target.js";
+import Session from "../../model/session.js";
+import Shot from "../../model/shot.js";
+import {
+  createTarget,
+  listTargets,
+  updateTarget,
+  deleteTarget,
+} from "../targetController.js";
+
+jest.setTimeout(60000);
+
+const createMockResponse = () => {
+  const res = {};
+  res.status = jest.fn().mockImplementation(() => res);
+  res.json = jest.fn().mockImplementation((payload) => {
+    res.body = payload;
+    return res;
+  });
+  return res;
+};
+
+describe("targetController", () => {
+  let mongoServer;
+  let userId;
+  let session;
+
+  beforeAll(async () => {
+    mongoServer = await MongoMemoryServer.create();
+    await mongoose.connect(mongoServer.getUri());
+    userId = new mongoose.Types.ObjectId();
+  });
+
+  beforeEach(async () => {
+    await Promise.all([
+      Target.deleteMany({}),
+      Session.deleteMany({}),
+      Shot.deleteMany({}),
+    ]);
+
+    session = await Session.create({ userId });
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await mongoServer.stop();
+  });
+
+  it("creates targets and maintains the session reference", async () => {
+    const req = {
+      params: {
+        sessionId: session._id.toString(),
+        userId: userId.toString(),
+      },
+      body: { targetNumber: 1 },
+    };
+
+    const res = createMockResponse();
+
+    await createTarget(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+
+    const targets = await Target.find({ sessionId: session._id });
+    expect(targets).toHaveLength(1);
+    expect(targets[0].targetNumber).toBe(1);
+
+    const updatedSession = await Session.findById(session._id);
+    expect(updatedSession.targets).toHaveLength(1);
+    expect(updatedSession.targets[0].toString()).toBe(targets[0]._id.toString());
+  });
+
+  it("lists targets sorted by targetNumber with populated shots", async () => {
+    const firstTarget = await Target.create({
+      targetNumber: 2,
+      sessionId: session._id,
+      userId,
+      shots: [],
+    });
+    const secondTarget = await Target.create({
+      targetNumber: 0,
+      sessionId: session._id,
+      userId,
+      shots: [],
+    });
+
+    const firstShot = await Shot.create({
+      score: 9,
+      sessionId: session._id,
+      userId,
+      targetId: firstTarget._id,
+      targetNumber: 2,
+    });
+    const secondShot = await Shot.create({
+      score: 10,
+      sessionId: session._id,
+      userId,
+      targetId: secondTarget._id,
+      targetNumber: 0,
+    });
+
+    firstTarget.shots.push(firstShot._id);
+    secondTarget.shots.push(secondShot._id);
+    await firstTarget.save();
+    await secondTarget.save();
+
+    session.targets.push(firstTarget._id, secondTarget._id);
+    await session.save();
+
+    const req = {
+      params: {
+        sessionId: session._id.toString(),
+        userId: userId.toString(),
+      },
+    };
+
+    const res = createMockResponse();
+    await listTargets(req, res);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.body).toHaveLength(2);
+    expect(res.body[0].targetNumber).toBe(0);
+    expect(res.body[0].shots).toHaveLength(1);
+    expect(res.body[0].shots[0].score).toBe(10);
+    expect(res.body[1].targetNumber).toBe(2);
+    expect(res.body[1].shots).toHaveLength(1);
+    expect(res.body[1].shots[0].score).toBe(9);
+  });
+
+  it("updates the target number and cascades to shots", async () => {
+    const createReq = {
+      params: {
+        sessionId: session._id.toString(),
+        userId: userId.toString(),
+      },
+      body: { targetNumber: 3 },
+    };
+
+    const createRes = createMockResponse();
+    await createTarget(createReq, createRes);
+
+    const target = await Target.findOne({ sessionId: session._id });
+
+    const shot = await Shot.create({
+      score: 8,
+      sessionId: session._id,
+      userId,
+      targetId: target._id,
+      targetNumber: 3,
+    });
+
+    target.shots.push(shot._id);
+    await target.save();
+
+    const updateReq = {
+      params: {
+        sessionId: session._id.toString(),
+        userId: userId.toString(),
+        targetId: target._id.toString(),
+      },
+      body: { targetNumber: 5 },
+    };
+
+    const updateRes = createMockResponse();
+    await updateTarget(updateReq, updateRes);
+
+    expect(updateRes.status).not.toHaveBeenCalled();
+    const updatedTarget = await Target.findById(target._id);
+    expect(updatedTarget.targetNumber).toBe(5);
+
+    const updatedShot = await Shot.findById(shot._id);
+    expect(updatedShot.targetNumber).toBe(5);
+  });
+
+  it("deletes targets, removes references, and recalculates stats", async () => {
+    const createRes = createMockResponse();
+    await createTarget(
+      {
+        params: {
+          sessionId: session._id.toString(),
+          userId: userId.toString(),
+        },
+        body: { targetNumber: 4 },
+      },
+      createRes,
+    );
+
+    const target = await Target.findOne({ sessionId: session._id });
+
+    const shot = await Shot.create({
+      score: 7,
+      sessionId: session._id,
+      userId,
+      targetId: target._id,
+      targetNumber: 4,
+    });
+
+    target.shots.push(shot._id);
+    await target.save();
+
+    await Session.findByIdAndUpdate(session._id, {
+      $set: {
+        targets: [target._id],
+        totalShots: 1,
+        averageScore: 7,
+        maxScore: 7,
+        minScore: 7,
+      },
+    });
+
+    const deleteReq = {
+      params: {
+        sessionId: session._id.toString(),
+        userId: userId.toString(),
+        targetId: target._id.toString(),
+      },
+    };
+
+    const deleteRes = createMockResponse();
+    await deleteTarget(deleteReq, deleteRes);
+
+    expect(deleteRes.status).not.toHaveBeenCalled();
+    expect(deleteRes.body).toEqual({ message: "Target deleted successfully" });
+
+    const deletedTarget = await Target.findById(target._id);
+    expect(deletedTarget).toBeNull();
+
+    const sessionAfter = await Session.findById(session._id);
+    expect(sessionAfter.targets).toHaveLength(0);
+    expect(sessionAfter.totalShots).toBe(0);
+    expect(sessionAfter.averageScore).toBe(0);
+    expect(sessionAfter.maxScore).toBe(0);
+    expect(sessionAfter.minScore).toBe(0);
+
+    const remainingShots = await Shot.find({ sessionId: session._id });
+    expect(remainingShots).toHaveLength(0);
+  });
+
+  it("rejects duplicate target numbers", async () => {
+    const firstRes = createMockResponse();
+    await createTarget(
+      {
+        params: {
+          sessionId: session._id.toString(),
+          userId: userId.toString(),
+        },
+        body: { targetNumber: 1 },
+      },
+      firstRes,
+    );
+
+    const req = {
+      params: {
+        sessionId: session._id.toString(),
+        userId: userId.toString(),
+      },
+      body: { targetNumber: 1 },
+    };
+
+    const res = createMockResponse();
+    await createTarget(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.body).toEqual({
+      error: "A target with this targetNumber already exists for the session",
+    });
+  });
+});
