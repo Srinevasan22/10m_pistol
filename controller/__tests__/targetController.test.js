@@ -82,6 +82,45 @@ describe("targetController", () => {
     expect(updatedSession.targets[0].toString()).toBe(targets[0]._id.toString());
   });
 
+  it("resequences numbering when targets are created with skipped values", async () => {
+    const firstRes = createMockResponse();
+    await createTarget(
+      {
+        params: {
+          sessionId: session._id.toString(),
+          userId: userId.toString(),
+        },
+        body: { targetNumber: 5 },
+      },
+      firstRes,
+    );
+
+    expect(firstRes.status).toHaveBeenCalledWith(201);
+    expect(firstRes.body.targetNumber).toBe(1);
+
+    const secondRes = createMockResponse();
+    await createTarget(
+      {
+        params: {
+          sessionId: session._id.toString(),
+          userId: userId.toString(),
+        },
+        body: { targetNumber: 7 },
+      },
+      secondRes,
+    );
+
+    expect(secondRes.status).toHaveBeenCalledWith(201);
+    expect(secondRes.body.targetNumber).toBe(2);
+
+    const targets = await Target.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+
+    expect(targets).toHaveLength(2);
+    expect(targets.map((target) => target.targetNumber)).toEqual([1, 2]);
+  });
+
   it("lists targets sorted by targetNumber with populated shots", async () => {
     const firstTarget = await Target.create({
       targetNumber: 2,
@@ -131,7 +170,7 @@ describe("targetController", () => {
 
     expect(res.status).not.toHaveBeenCalled();
     expect(res.body).toHaveLength(2);
-    expect(res.body[0].targetNumber).toBe(0);
+    expect(res.body[0].targetNumber).toBe(1);
     expect(res.body[0].shots).toHaveLength(1);
     expect(res.body[0].shots[0].score).toBe(10);
     expect(res.body[1].targetNumber).toBe(2);

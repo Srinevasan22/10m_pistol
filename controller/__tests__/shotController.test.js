@@ -151,20 +151,20 @@ describe("shotController session statistics", () => {
 
     const savedShot = await Shot.findOne({ sessionId: session._id });
     expect(savedShot.targetIndex).toBe(metadata.targetIndex);
-    expect(savedShot.targetNumber).toBe(metadata.targetNumber);
+    expect(savedShot.targetNumber).toBe(1);
     expect(savedShot.targetShotIndex).toBe(metadata.targetShotIndex);
     expect(savedShot.targetShotNumber).toBe(metadata.targetShotNumber);
 
     const target = await Target.findOne({
       sessionId: session._id,
-      targetNumber: metadata.targetNumber,
+      targetNumber: savedShot.targetNumber,
     });
     expect(target).not.toBeNull();
     expect(target.shots).toHaveLength(1);
     expect(target.shots[0].toString()).toBe(savedShot._id.toString());
 
     expect(res.body.targetIndex).toBe(metadata.targetIndex);
-    expect(res.body.targetNumber).toBe(metadata.targetNumber);
+    expect(res.body.targetNumber).toBe(1);
     expect(res.body.targetShotIndex).toBe(metadata.targetShotIndex);
     expect(res.body.targetShotNumber).toBe(metadata.targetShotNumber);
   });
@@ -191,13 +191,13 @@ describe("shotController session statistics", () => {
     const savedData = savedShot.toObject();
 
     expect(savedData.targetIndex).toBe(2);
-    expect(savedData.targetNumber).toBe(3);
+    expect(savedData.targetNumber).toBe(1);
     expect(savedData.targetShotIndex).toBe(1);
     expect(savedData.targetShotNumber).toBe(2);
 
     const target = await Target.findOne({
       sessionId: session._id,
-      targetNumber: 3,
+      targetNumber: savedData.targetNumber,
     });
     expect(target).not.toBeNull();
     expect(target.shots).toHaveLength(1);
@@ -209,9 +209,191 @@ describe("shotController session statistics", () => {
     expect(savedData.target_shot_no).toBeUndefined();
 
     expect(res.body.targetIndex).toBe(2);
-    expect(res.body.targetNumber).toBe(3);
+    expect(res.body.targetNumber).toBe(1);
     expect(res.body.targetShotIndex).toBe(1);
     expect(res.body.targetShotNumber).toBe(2);
+  });
+
+  it("resequences targets when a shot skips ahead in numbering", async () => {
+    const params = {
+      sessionId: session._id.toString(),
+      userId: userId.toString(),
+    };
+
+    await addShot(
+      {
+        params,
+        body: { score: 6, targetNumber: 1 },
+      },
+      createMockResponse(),
+    );
+
+    await addShot(
+      {
+        params,
+        body: { score: 7, targetNumber: 2 },
+      },
+      createMockResponse(),
+    );
+
+    const skippedRes = createMockResponse();
+    await addShot(
+      {
+        params,
+        body: { score: 8, targetNumber: 6 },
+      },
+      skippedRes,
+    );
+
+    expect(skippedRes.status).toHaveBeenCalledWith(201);
+    expect(skippedRes.body.targetNumber).toBe(3);
+
+    const targets = await Target.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+
+    expect(targets).toHaveLength(3);
+    expect(targets.map((target) => target.targetNumber)).toEqual([1, 2, 3]);
+
+    const shots = await Shot.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+
+    expect(shots).toHaveLength(3);
+    expect(shots.map((shot) => shot.targetNumber)).toEqual([1, 2, 3]);
+  });
+
+  it("resequences out-of-order targets when adding a shot to an existing bucket", async () => {
+    const targetOne = await Target.create({
+      sessionId: session._id,
+      userId,
+      targetNumber: 1,
+      shots: [],
+    });
+    const targetTwo = await Target.create({
+      sessionId: session._id,
+      userId,
+      targetNumber: 2,
+      shots: [],
+    });
+    const targetSix = await Target.create({
+      sessionId: session._id,
+      userId,
+      targetNumber: 6,
+      shots: [],
+    });
+
+    await Session.findByIdAndUpdate(session._id, {
+      $set: { targets: [targetOne._id, targetTwo._id, targetSix._id] },
+    });
+
+    const req = {
+      params: {
+        sessionId: session._id.toString(),
+        userId: userId.toString(),
+      },
+      body: {
+        score: 8,
+        targetNumber: 6,
+      },
+    };
+
+    const res = createMockResponse();
+
+    await addShot(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.body.targetNumber).toBe(3);
+
+    const targets = await Target.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+    expect(targets.map((target) => target.targetNumber)).toEqual([1, 2, 3]);
+
+    const resequencedTarget = await Target.findOne({
+      sessionId: session._id,
+      userId,
+      targetNumber: 3,
+    });
+    expect(resequencedTarget).not.toBeNull();
+    expect(resequencedTarget.shots).toHaveLength(1);
+
+    const savedShot = await Shot.findOne({ sessionId: session._id });
+    expect(savedShot.targetNumber).toBe(3);
+    expect(savedShot.targetId.toString()).toBe(resequencedTarget._id.toString());
+
+    const originalTargets = await Target.find({
+      sessionId: session._id,
+      userId,
+    })
+      .sort({ targetNumber: 1 })
+      .lean();
+    expect(originalTargets[0].shots).toHaveLength(0);
+    expect(originalTargets[1].shots).toHaveLength(0);
+  });
+
+  it("resequences targets before returning grouped shots for a session", async () => {
+    const misnumberedTarget = await Target.create({
+      sessionId: session._id,
+      userId,
+      targetNumber: 4,
+      shots: [],
+    });
+
+    const onTarget = await Target.create({
+      sessionId: session._id,
+      userId,
+      targetNumber: 1,
+      shots: [],
+    });
+
+    await Session.findByIdAndUpdate(session._id, {
+      $set: { targets: [misnumberedTarget._id, onTarget._id] },
+    });
+
+    const earlyShot = await Shot.create({
+      sessionId: session._id,
+      userId,
+      targetId: onTarget._id,
+      targetNumber: 1,
+      score: 9,
+    });
+    const lateShot = await Shot.create({
+      sessionId: session._id,
+      userId,
+      targetId: misnumberedTarget._id,
+      targetNumber: 4,
+      score: 8,
+    });
+
+    onTarget.shots.push(earlyShot._id);
+    await onTarget.save();
+    misnumberedTarget.shots.push(lateShot._id);
+    await misnumberedTarget.save();
+
+    const req = {
+      params: {
+        sessionId: session._id.toString(),
+        userId: userId.toString(),
+      },
+    };
+
+    const res = createMockResponse();
+
+    await getShotsBySession(req, res);
+
+    expect(res.body).toHaveLength(2);
+    expect(res.body.map((target) => target.targetNumber)).toEqual([1, 2]);
+
+    const updatedTargets = await Target.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+    expect(updatedTargets.map((target) => target.targetNumber)).toEqual([1, 2]);
+
+    const updatedShots = await Shot.find({ sessionId: session._id })
+      .sort({ score: -1 })
+      .lean();
+    expect(updatedShots.map((shot) => shot.targetNumber)).toEqual([1, 2]);
   });
 
   it("groups shots by target when fetching session shots", async () => {
@@ -271,6 +453,8 @@ describe("shotController session statistics", () => {
     await addShot(addReq, addRes);
 
     const shot = await Shot.findOne({ sessionId: session._id });
+    const expectedTargetNumber = shot.targetNumber;
+    expect(expectedTargetNumber).toBe(1);
 
     const updateReq = {
       params: {
@@ -325,6 +509,8 @@ describe("shotController session statistics", () => {
     );
 
     const shot = await Shot.findOne({ sessionId: session._id });
+    const expectedTargetNumber = shot.targetNumber;
+    expect(expectedTargetNumber).toBe(1);
 
     const zeroTimestamp = new Date(0);
 
@@ -359,7 +545,7 @@ describe("shotController session statistics", () => {
 
     const target = await Target.findOne({
       sessionId: session._id,
-      targetNumber: 3,
+      targetNumber: expectedTargetNumber,
     });
     expect(target).not.toBeNull();
     expect(target.shots).toHaveLength(1);
@@ -516,10 +702,13 @@ describe("shotController session statistics", () => {
       addRes,
     );
 
+    const shot = await Shot.findOne({ sessionId: session._id });
+    expect(shot.targetNumber).toBe(1);
+
     const target = await Target.findOne({
       sessionId: session._id,
       userId,
-      targetNumber: 2,
+      targetNumber: shot.targetNumber,
     });
 
     expect(target).not.toBeNull();

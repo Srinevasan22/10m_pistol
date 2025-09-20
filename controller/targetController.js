@@ -83,7 +83,14 @@ export const createTarget = async (req, res) => {
       $addToSet: { targets: target._id },
     });
 
-    return res.status(201).json(target);
+    await resequenceTargetsForSession({
+      sessionId: normalizedSessionId,
+      userId: normalizedUserId,
+    });
+
+    const resequencedTarget = await Target.findById(target._id);
+
+    return res.status(201).json(resequencedTarget ?? target);
   } catch (error) {
     console.error("Error creating target:", error.message);
     return res.status(500).json({ error: error.message });
@@ -109,6 +116,11 @@ export const listTargets = async (req, res) => {
     if (error) {
       return res.status(status).json({ error });
     }
+
+    await resequenceTargetsForSession({
+      sessionId: normalizedSessionId,
+      userId: normalizedUserId,
+    });
 
     const targets = await Target.find({
       sessionId: normalizedSessionId,

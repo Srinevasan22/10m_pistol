@@ -57,7 +57,7 @@ describe("/targets routes", () => {
       .send({ targetNumber: 2 });
 
     expect(res.status).toBe(201);
-    expect(res.body.targetNumber).toBe(2);
+    expect(res.body.targetNumber).toBe(1);
 
     const sessionDoc = await Session.findById(session._id);
     expect(sessionDoc.targets).toHaveLength(1);
@@ -90,7 +90,7 @@ describe("/targets routes", () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(2);
     expect(res.body[0].targetNumber).toBe(1);
-    expect(res.body[1].targetNumber).toBe(5);
+    expect(res.body[1].targetNumber).toBe(2);
   });
 
   it("updates targets, cascades to shots, and resequences numbering", async () => {

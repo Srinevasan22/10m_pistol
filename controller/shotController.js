@@ -55,6 +55,16 @@ const ensureTargetForSession = async ({ sessionId, userId, targetNumber }) => {
     $addToSet: { targets: target._id },
   });
 
+  await resequenceTargetsForSession({
+    sessionId: normalizedSessionId,
+    userId: normalizedUserId,
+  });
+
+  const refreshedTarget = await Target.findById(target._id);
+  if (refreshedTarget) {
+    target = refreshedTarget;
+  }
+
   return target;
 };
 
@@ -160,9 +170,15 @@ export const addShot = async (req, res) => {
     }
 
     const normalizedBody = normalizeTargetMetadata(req.body);
-    const { positionX, positionY, timestamp, ...shotData } = normalizedBody;
+    const {
+      positionX,
+      positionY,
+      timestamp,
+      targetNumber: requestedTargetNumber,
+      ...shotData
+    } = normalizedBody;
 
-    const targetNumber = parseTargetNumber(normalizedBody.targetNumber);
+    const targetNumber = parseTargetNumber(requestedTargetNumber);
 
     if (targetNumber === null || Number.isNaN(targetNumber)) {
       return res.status(400).json({
@@ -184,15 +200,24 @@ export const addShot = async (req, res) => {
         .json({ error: "Unauthorized to add a shot to this session" });
     }
 
-    const target = await ensureTargetForSession({
+    let target = await ensureTargetForSession({
       sessionId,
       userId,
       targetNumber,
     });
 
+    if (!target) {
+      return res
+        .status(500)
+        .json({ error: "Unable to determine the target for this shot" });
+    }
+
+    const effectiveTargetNumber =
+      typeof target.targetNumber === "number" ? target.targetNumber : targetNumber;
+
     const shot = new Shot({
       ...shotData,
-      targetNumber,
+      targetNumber: effectiveTargetNumber,
       sessionId,
       userId,
       targetId: target._id,
@@ -233,6 +258,8 @@ export const getShotsBySession = async (req, res) => {
 
     const sessionId = new mongoose.Types.ObjectId(req.params.sessionId);
     const userId = new mongoose.Types.ObjectId(req.params.userId);
+
+    await resequenceTargetsForSession({ sessionId, userId });
 
     const targets = await Target.find({
       sessionId,
