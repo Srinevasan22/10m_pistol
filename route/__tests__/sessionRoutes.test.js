@@ -18,7 +18,7 @@ import User from "../../model/user.js";
 
 jest.setTimeout(60000);
 
-describe("GET /pistol/users/:userId/sessions/:sessionId", () => {
+describe("Session routes", () => {
   let app;
   let mongoServer;
 
@@ -65,5 +65,54 @@ describe("GET /pistol/users/:userId/sessions/:sessionId", () => {
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: "Session not found" });
+  });
+
+  it("returns 400 when listing sessions for an invalid user ID", async () => {
+    const res = await request(app).get("/pistol/users/not-a-valid-id/sessions");
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "Invalid user ID" });
+  });
+
+  it("returns 400 when fetching a session with an invalid user ID", async () => {
+    const res = await request(app).get(
+      "/pistol/users/not-a-valid-id/sessions/also-invalid",
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "Invalid user ID" });
+  });
+
+  it("returns 400 when fetching a session with an invalid session ID", async () => {
+    const user = await User.create({ username: "mallory" });
+
+    const res = await request(app).get(
+      `/pistol/users/${user._id.toString()}/sessions/not-a-valid-id`,
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "Invalid session ID" });
+  });
+
+  it("returns 400 when updating a session with an invalid session ID", async () => {
+    const user = await User.create({ username: "trent" });
+
+    const res = await request(app)
+      .put(`/pistol/users/${user._id.toString()}/sessions/not-a-valid-id`)
+      .send({ name: "irrelevant" });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "Invalid session ID" });
+  });
+
+  it("returns 400 when deleting a session with an invalid session ID", async () => {
+    const user = await User.create({ username: "victor" });
+
+    const res = await request(app).delete(
+      `/pistol/users/${user._id.toString()}/sessions/not-a-valid-id`,
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "Invalid session ID" });
   });
 });
