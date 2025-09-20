@@ -5,6 +5,32 @@ import Target from "../model/target.js";
 import { recalculateSessionStats } from "../util/sessionStats.js";
 import { normalizeTargetMetadata } from "../util/shotMetadata.js";
 
+const sanitizeShotResponse = (shotDoc) => {
+  if (!shotDoc) {
+    return shotDoc;
+  }
+
+  const shotObject =
+    typeof shotDoc.toObject === "function"
+      ? shotDoc.toObject({ versionKey: false })
+      : { ...shotDoc };
+
+  const metadataFields = [
+    "targetIndex",
+    "targetNumber",
+    "targetShotIndex",
+    "targetShotNumber",
+  ];
+
+  for (const field of metadataFields) {
+    if (shotObject[field] === null || shotObject[field] === undefined) {
+      delete shotObject[field];
+    }
+  }
+
+  return shotObject;
+};
+
 const ensureTargetForSession = async ({ sessionId, userId, targetNumber }) => {
   const normalizedSessionId = mongoose.Types.ObjectId(sessionId);
   const normalizedUserId = mongoose.Types.ObjectId(userId);
@@ -127,7 +153,7 @@ export const addShot = async (req, res) => {
 
     await recalculateSessionStats(session._id);
 
-    res.status(201).json(shot);
+    res.status(201).json(sanitizeShotResponse(shot));
   } catch (error) {
     console.error("Error adding shot:", error.message);
     res.status(500).json({ error: error.message });
@@ -278,7 +304,7 @@ export const updateShot = async (req, res) => {
 
     await recalculateSessionStats(shot.sessionId);
 
-    res.json(shot);
+    res.json(sanitizeShotResponse(shot));
   } catch (error) {
     console.error("Error updating shot:", error.message);
     res.status(500).json({ error: error.message });
