@@ -151,20 +151,20 @@ describe("shotController session statistics", () => {
 
     const savedShot = await Shot.findOne({ sessionId: session._id });
     expect(savedShot.targetIndex).toBe(metadata.targetIndex);
-    expect(savedShot.targetNumber).toBe(metadata.targetNumber);
+    expect(savedShot.targetNumber).toBe(1);
     expect(savedShot.targetShotIndex).toBe(metadata.targetShotIndex);
     expect(savedShot.targetShotNumber).toBe(metadata.targetShotNumber);
 
     const target = await Target.findOne({
       sessionId: session._id,
-      targetNumber: metadata.targetNumber,
+      targetNumber: savedShot.targetNumber,
     });
     expect(target).not.toBeNull();
     expect(target.shots).toHaveLength(1);
     expect(target.shots[0].toString()).toBe(savedShot._id.toString());
 
     expect(res.body.targetIndex).toBe(metadata.targetIndex);
-    expect(res.body.targetNumber).toBe(metadata.targetNumber);
+    expect(res.body.targetNumber).toBe(1);
     expect(res.body.targetShotIndex).toBe(metadata.targetShotIndex);
     expect(res.body.targetShotNumber).toBe(metadata.targetShotNumber);
   });
@@ -191,13 +191,13 @@ describe("shotController session statistics", () => {
     const savedData = savedShot.toObject();
 
     expect(savedData.targetIndex).toBe(2);
-    expect(savedData.targetNumber).toBe(3);
+    expect(savedData.targetNumber).toBe(1);
     expect(savedData.targetShotIndex).toBe(1);
     expect(savedData.targetShotNumber).toBe(2);
 
     const target = await Target.findOne({
       sessionId: session._id,
-      targetNumber: 3,
+      targetNumber: savedData.targetNumber,
     });
     expect(target).not.toBeNull();
     expect(target.shots).toHaveLength(1);
@@ -209,9 +209,58 @@ describe("shotController session statistics", () => {
     expect(savedData.target_shot_no).toBeUndefined();
 
     expect(res.body.targetIndex).toBe(2);
-    expect(res.body.targetNumber).toBe(3);
+    expect(res.body.targetNumber).toBe(1);
     expect(res.body.targetShotIndex).toBe(1);
     expect(res.body.targetShotNumber).toBe(2);
+  });
+
+  it("resequences targets when a shot skips ahead in numbering", async () => {
+    const params = {
+      sessionId: session._id.toString(),
+      userId: userId.toString(),
+    };
+
+    await addShot(
+      {
+        params,
+        body: { score: 6, targetNumber: 1 },
+      },
+      createMockResponse(),
+    );
+
+    await addShot(
+      {
+        params,
+        body: { score: 7, targetNumber: 2 },
+      },
+      createMockResponse(),
+    );
+
+    const skippedRes = createMockResponse();
+    await addShot(
+      {
+        params,
+        body: { score: 8, targetNumber: 6 },
+      },
+      skippedRes,
+    );
+
+    expect(skippedRes.status).toHaveBeenCalledWith(201);
+    expect(skippedRes.body.targetNumber).toBe(3);
+
+    const targets = await Target.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+
+    expect(targets).toHaveLength(3);
+    expect(targets.map((target) => target.targetNumber)).toEqual([1, 2, 3]);
+
+    const shots = await Shot.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+
+    expect(shots).toHaveLength(3);
+    expect(shots.map((shot) => shot.targetNumber)).toEqual([1, 2, 3]);
   });
 
   it("groups shots by target when fetching session shots", async () => {
@@ -271,6 +320,8 @@ describe("shotController session statistics", () => {
     await addShot(addReq, addRes);
 
     const shot = await Shot.findOne({ sessionId: session._id });
+    const expectedTargetNumber = shot.targetNumber;
+    expect(expectedTargetNumber).toBe(1);
 
     const updateReq = {
       params: {
@@ -325,6 +376,8 @@ describe("shotController session statistics", () => {
     );
 
     const shot = await Shot.findOne({ sessionId: session._id });
+    const expectedTargetNumber = shot.targetNumber;
+    expect(expectedTargetNumber).toBe(1);
 
     const zeroTimestamp = new Date(0);
 
@@ -359,7 +412,7 @@ describe("shotController session statistics", () => {
 
     const target = await Target.findOne({
       sessionId: session._id,
-      targetNumber: 3,
+      targetNumber: expectedTargetNumber,
     });
     expect(target).not.toBeNull();
     expect(target.shots).toHaveLength(1);
@@ -516,10 +569,13 @@ describe("shotController session statistics", () => {
       addRes,
     );
 
+    const shot = await Shot.findOne({ sessionId: session._id });
+    expect(shot.targetNumber).toBe(1);
+
     const target = await Target.findOne({
       sessionId: session._id,
       userId,
-      targetNumber: 2,
+      targetNumber: shot.targetNumber,
     });
 
     expect(target).not.toBeNull();

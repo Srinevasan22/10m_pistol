@@ -57,7 +57,7 @@ describe("/targets routes", () => {
       .send({ targetNumber: 2 });
 
     expect(res.status).toBe(201);
-    expect(res.body.targetNumber).toBe(2);
+    expect(res.body.targetNumber).toBe(1);
 
     const sessionDoc = await Session.findById(session._id);
     expect(sessionDoc.targets).toHaveLength(1);

@@ -53,7 +53,7 @@ describe("Shot routes accept form submissions", () => {
 
     expect(res.status).toBe(201);
     expect(res.body.score).toBe(9.5);
-    expect(res.body.targetNumber).toBe(2);
+    expect(res.body.targetNumber).toBe(1);
 
     const shots = await Shot.find({ sessionId: session._id });
     expect(shots).toHaveLength(1);
@@ -61,7 +61,7 @@ describe("Shot routes accept form submissions", () => {
 
     const targets = await Target.find({ sessionId: session._id });
     expect(targets).toHaveLength(1);
-    expect(targets[0].targetNumber).toBe(2);
+    expect(targets[0].targetNumber).toBe(1);
     expect(targets[0].shots).toHaveLength(1);
   });
 });
