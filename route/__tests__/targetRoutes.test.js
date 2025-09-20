@@ -93,39 +93,65 @@ describe("/targets routes", () => {
     expect(res.body[1].targetNumber).toBe(5);
   });
 
-  it("updates targets and cascades to shots", async () => {
-    const target = await Target.create({
-      targetNumber: 3,
+  it("updates targets, cascades to shots, and resequences numbering", async () => {
+    const firstTarget = await Target.create({
+      targetNumber: 1,
+      sessionId: session._id,
+      userId: user._id,
+      shots: [],
+    });
+    const secondTarget = await Target.create({
+      targetNumber: 2,
       sessionId: session._id,
       userId: user._id,
       shots: [],
     });
 
-    session.targets.push(target._id);
+    session.targets.push(firstTarget._id, secondTarget._id);
     await session.save();
 
-    const shot = await Shot.create({
+    const firstShot = await Shot.create({
       score: 8,
       sessionId: session._id,
       userId: user._id,
-      targetId: target._id,
-      targetNumber: 3,
+      targetId: firstTarget._id,
+      targetNumber: 1,
+    });
+    const secondShot = await Shot.create({
+      score: 9,
+      sessionId: session._id,
+      userId: user._id,
+      targetId: secondTarget._id,
+      targetNumber: 2,
     });
 
-    target.shots.push(shot._id);
-    await target.save();
+    firstTarget.shots.push(firstShot._id);
+    secondTarget.shots.push(secondShot._id);
+    await firstTarget.save();
+    await secondTarget.save();
 
     const res = await request(app)
       .put(
-        `/pistol/users/${user._id.toString()}/sessions/${session._id.toString()}/targets/${target._id.toString()}`,
+        `/pistol/users/${user._id.toString()}/sessions/${session._id.toString()}/targets/${secondTarget._id.toString()}`,
       )
-      .send({ targetNumber: 4 });
+      .send({ targetNumber: 0 });
 
     expect(res.status).toBe(200);
-    expect(res.body.targetNumber).toBe(4);
+    expect(res.body.targetNumber).toBe(1);
 
-    const updatedShot = await Shot.findById(shot._id);
-    expect(updatedShot.targetNumber).toBe(4);
+    const targets = await Target.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+
+    expect(targets[0]._id.toString()).toBe(secondTarget._id.toString());
+    expect(targets[0].targetNumber).toBe(1);
+    expect(targets[1]._id.toString()).toBe(firstTarget._id.toString());
+    expect(targets[1].targetNumber).toBe(2);
+
+    const firstShotAfter = await Shot.findById(firstShot._id);
+    expect(firstShotAfter.targetNumber).toBe(2);
+    const secondShotAfter = await Shot.findById(secondShot._id);
+    expect(secondShotAfter.targetNumber).toBe(1);
   });
 
   it("deletes targets, removes references, and recalculates stats", async () => {
