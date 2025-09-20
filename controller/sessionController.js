@@ -53,7 +53,36 @@ export const getSessionById = async (req, res) => {
 
     await session.populateTargets();
 
-    res.json(session);
+    const sessionObject = session.toObject({ versionKey: false });
+    const shots = [];
+
+    if (Array.isArray(sessionObject.targets)) {
+      for (const target of sessionObject.targets) {
+        const targetShots = Array.isArray(target?.shots) ? target.shots : [];
+
+        for (const shot of targetShots) {
+          if (!shot) {
+            continue;
+          }
+
+          if (typeof shot.toObject === 'function') {
+            const shotObject = shot.toObject({ versionKey: false });
+            delete shotObject.__v;
+            delete shotObject._doc;
+            shots.push(shotObject);
+          } else {
+            const shotClone = { ...shot };
+            delete shotClone.__v;
+            delete shotClone._doc;
+            shots.push(shotClone);
+          }
+        }
+      }
+    }
+
+    sessionObject.shots = shots;
+
+    res.json(sessionObject);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
