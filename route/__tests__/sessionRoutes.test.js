@@ -14,6 +14,8 @@ import {
 
 import sessionRoutes from "../sessionRoutes.js";
 import Session from "../../model/session.js";
+import Shot from "../../model/shot.js";
+import Target from "../../model/target.js";
 import User from "../../model/user.js";
 
 jest.setTimeout(60000);
@@ -33,6 +35,8 @@ describe("Session routes", () => {
 
   beforeEach(async () => {
     await Session.deleteMany({});
+    await Shot.deleteMany({});
+    await Target.deleteMany({});
     await User.deleteMany({});
   });
 
@@ -52,6 +56,62 @@ describe("Session routes", () => {
     expect(res.status).toBe(200);
     expect(res.body._id).toBe(session._id.toString());
     expect(res.body.userId).toBe(user._id.toString());
+  });
+
+  it("includes populated targets and derived shots array when retrieving a session", async () => {
+    const user = await User.create({ username: "bob" });
+    const session = await Session.create({ userId: user._id });
+
+    const target = await Target.create({
+      targetNumber: 1,
+      sessionId: session._id,
+      userId: user._id,
+      shots: [],
+    });
+
+    session.targets.push(target._id);
+    await session.save();
+
+    const shot = await Shot.create({
+      score: 10,
+      positionX: 3,
+      positionY: 4,
+      timestamp: new Date("2023-01-01T00:00:00.000Z"),
+      targetId: target._id,
+      targetIndex: 0,
+      targetNumber: target.targetNumber,
+      targetShotIndex: 0,
+      targetShotNumber: 1,
+      sessionId: session._id,
+      userId: user._id,
+    });
+
+    target.shots.push(shot._id);
+    await target.save();
+
+    const res = await request(app).get(
+      `/pistol/users/${user._id.toString()}/sessions/${session._id.toString()}`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.targets).toHaveLength(1);
+
+    const [populatedTarget] = res.body.targets;
+    expect(populatedTarget.targetNumber).toBe(1);
+    expect(populatedTarget.shots).toHaveLength(1);
+    expect(populatedTarget.shots[0]).toEqual(
+      expect.objectContaining({
+        _id: shot._id.toString(),
+        score: 10,
+        positionX: 3,
+        positionY: 4,
+      }),
+    );
+
+    expect(res.body.shots).toHaveLength(1);
+    expect(res.body.shots[0]).toEqual(populatedTarget.shots[0]);
+    expect(res.body.shots[0]).not.toHaveProperty("__v");
+    expect(res.body.shots[0]).not.toHaveProperty("_doc");
   });
 
   it("returns 404 when the session does not belong to the requesting user", async () => {
