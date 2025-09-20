@@ -83,6 +83,45 @@ describe("targetController", () => {
     expect(updatedSession.targets[0].toString()).toBe(targets[0]._id.toString());
   });
 
+  it("assigns the next target number when targetNumber is omitted", async () => {
+    const firstRes = createMockResponse();
+    await createTarget(
+      {
+        params: {
+          sessionId: session._id.toString(),
+          userId: userId.toString(),
+        },
+        body: {},
+      },
+      firstRes,
+    );
+
+    expect(firstRes.status).toHaveBeenCalledWith(201);
+    expect(firstRes.body.targetNumber).toBe(1);
+
+    const secondRes = createMockResponse();
+    await createTarget(
+      {
+        params: {
+          sessionId: session._id.toString(),
+          userId: userId.toString(),
+        },
+        body: {},
+      },
+      secondRes,
+    );
+
+    expect(secondRes.status).toHaveBeenCalledWith(201);
+    expect(secondRes.body.targetNumber).toBe(2);
+
+    const targets = await Target.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+
+    expect(targets).toHaveLength(2);
+    expect(targets.map((target) => target.targetNumber)).toEqual([1, 2]);
+  });
+
   it("resequences numbering when targets are created with skipped values", async () => {
     const firstRes = createMockResponse();
     await createTarget(
@@ -113,6 +152,41 @@ describe("targetController", () => {
 
     expect(secondRes.status).toHaveBeenCalledWith(201);
     expect(secondRes.body.targetNumber).toBe(2);
+
+    const targets = await Target.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+
+    expect(targets).toHaveLength(2);
+    expect(targets.map((target) => target.targetNumber)).toEqual([1, 2]);
+  });
+
+  it("accepts targetIndex values when creating new targets", async () => {
+    await createTarget(
+      {
+        params: {
+          sessionId: session._id.toString(),
+          userId: userId.toString(),
+        },
+        body: { targetNumber: 1 },
+      },
+      createMockResponse(),
+    );
+
+    const indexRes = createMockResponse();
+    await createTarget(
+      {
+        params: {
+          sessionId: session._id.toString(),
+          userId: userId.toString(),
+        },
+        body: { targetIndex: 1 },
+      },
+      indexRes,
+    );
+
+    expect(indexRes.status).toHaveBeenCalledWith(201);
+    expect(indexRes.body.targetNumber).toBe(2);
 
     const targets = await Target.find({ sessionId: session._id })
       .sort({ targetNumber: 1 })
@@ -253,6 +327,37 @@ describe("targetController", () => {
     expect(updatedFirstShot.targetNumber).toBe(2);
     const updatedSecondShot = await Shot.findById(secondShot._id);
     expect(updatedSecondShot.targetNumber).toBe(1);
+  });
+
+  it("accepts targetIndex values when updating a target", async () => {
+    const target = await Target.create({
+      targetNumber: 3,
+      sessionId: session._id,
+      userId,
+      shots: [],
+    });
+
+    session.targets.push(target._id);
+    await session.save();
+
+    const updateRes = createMockResponse();
+    await updateTarget(
+      {
+        params: {
+          sessionId: session._id.toString(),
+          userId: userId.toString(),
+          targetId: target._id.toString(),
+        },
+        body: { targetIndex: 4 },
+      },
+      updateRes,
+    );
+
+    expect(updateRes.status).not.toHaveBeenCalled();
+    expect(updateRes.body.targetNumber).toBe(1);
+
+    const updatedTarget = await Target.findById(target._id);
+    expect(updatedTarget.targetNumber).toBe(1);
   });
 
   it("deletes targets, removes references, and recalculates stats", async () => {
@@ -416,8 +521,8 @@ describe("targetController", () => {
       body: {
         targetOrder: [
           thirdTarget._id.toString(),
-          firstTarget._id.toString(),
-          secondTarget._id.toString(),
+          { targetNumber: firstTarget.targetNumber },
+          { target_index: 1 },
         ],
       },
     };

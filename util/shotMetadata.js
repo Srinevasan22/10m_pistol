@@ -1,3 +1,5 @@
+import { resolveTargetNumber } from "./targetRequestParsing.js";
+
 export const normalizeTargetMetadata = (payload = {}) => {
   if (!payload || typeof payload !== "object") {
     return {};
@@ -34,11 +36,12 @@ export const normalizeTargetMetadata = (payload = {}) => {
     }
   }
 
-  if (
-    !Object.prototype.hasOwnProperty.call(normalized, "targetNumber") &&
-    Object.prototype.hasOwnProperty.call(normalized, "targetIndex")
-  ) {
-    normalized.targetNumber = normalized.targetIndex;
+  if (!Object.prototype.hasOwnProperty.call(normalized, "targetNumber")) {
+    const { number, provided } = resolveTargetNumber(normalized);
+
+    if (provided && number !== null) {
+      normalized.targetNumber = number;
+    }
   }
 
   return normalized;
