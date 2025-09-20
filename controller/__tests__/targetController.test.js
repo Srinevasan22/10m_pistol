@@ -121,15 +121,15 @@ describe("targetController", () => {
     expect(targets.map((target) => target.targetNumber)).toEqual([1, 2]);
   });
 
-  it("lists targets sorted by targetNumber with populated shots", async () => {
+  it("lists targets with resequenced numbering and populated shots", async () => {
     const firstTarget = await Target.create({
-      targetNumber: 2,
+      targetNumber: 5,
       sessionId: session._id,
       userId,
       shots: [],
     });
     const secondTarget = await Target.create({
-      targetNumber: 0,
+      targetNumber: 2,
       sessionId: session._id,
       userId,
       shots: [],
@@ -140,14 +140,14 @@ describe("targetController", () => {
       sessionId: session._id,
       userId,
       targetId: firstTarget._id,
-      targetNumber: 2,
+      targetNumber: 5,
     });
     const secondShot = await Shot.create({
       score: 10,
       sessionId: session._id,
       userId,
       targetId: secondTarget._id,
-      targetNumber: 0,
+      targetNumber: 2,
     });
 
     firstTarget.shots.push(firstShot._id);
@@ -170,12 +170,20 @@ describe("targetController", () => {
 
     expect(res.status).not.toHaveBeenCalled();
     expect(res.body).toHaveLength(2);
-    expect(res.body[0].targetNumber).toBe(0);
+    expect(res.body.map((target) => target.targetNumber)).toEqual([1, 2]);
+    expect(res.body[0]._id.toString()).toBe(secondTarget._id.toString());
+    expect(res.body[1]._id.toString()).toBe(firstTarget._id.toString());
     expect(res.body[0].shots).toHaveLength(1);
     expect(res.body[0].shots[0].score).toBe(10);
-    expect(res.body[1].targetNumber).toBe(2);
+    expect(res.body[0].shots[0].targetNumber).toBe(1);
     expect(res.body[1].shots).toHaveLength(1);
     expect(res.body[1].shots[0].score).toBe(9);
+    expect(res.body[1].shots[0].targetNumber).toBe(2);
+
+    const updatedShots = await Shot.find({ sessionId: session._id })
+      .sort({ targetNumber: 1, _id: 1 })
+      .lean();
+    expect(updatedShots.map((shot) => shot.targetNumber)).toEqual([1, 2]);
   });
 
   it("updates target numbers, cascades to shots, and resequences remaining targets", async () => {

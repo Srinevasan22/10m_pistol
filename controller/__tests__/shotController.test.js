@@ -263,29 +263,94 @@ describe("shotController session statistics", () => {
     expect(shots.map((shot) => shot.targetNumber)).toEqual([1, 2, 3]);
   });
 
+  it("resequences legacy targets when ensuring an existing bucket", async () => {
+    const params = {
+      sessionId: session._id.toString(),
+      userId: userId.toString(),
+    };
+
+    const firstTarget = await Target.create({
+      targetNumber: 1,
+      sessionId: session._id,
+      userId,
+      shots: [],
+    });
+
+    const secondTarget = await Target.create({
+      targetNumber: 4,
+      sessionId: session._id,
+      userId,
+      shots: [],
+    });
+
+    session.targets.push(firstTarget._id, secondTarget._id);
+    await session.save();
+
+    const res = createMockResponse();
+    await addShot(
+      {
+        params,
+        body: { score: 9.4, targetNumber: 4 },
+      },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.body.targetNumber).toBe(2);
+
+    const targets = await Target.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+    expect(targets.map((target) => target.targetNumber)).toEqual([1, 2]);
+    expect(targets[1]._id.toString()).toBe(secondTarget._id.toString());
+
+    const savedShot = await Shot.findById(res.body._id).lean();
+    expect(savedShot.targetNumber).toBe(2);
+  });
+
   it("groups shots by target when fetching session shots", async () => {
     const params = {
       sessionId: session._id.toString(),
       userId: userId.toString(),
     };
 
-    const firstShotRes = createMockResponse();
-    await addShot(
-      {
-        params,
-        body: { score: 6, targetNumber: 1 },
-      },
-      firstShotRes,
-    );
+    const firstTarget = await Target.create({
+      targetNumber: 1,
+      sessionId: session._id,
+      userId,
+      shots: [],
+    });
 
-    const secondShotRes = createMockResponse();
-    await addShot(
-      {
-        params,
-        body: { score: 8, targetNumber: 2 },
-      },
-      secondShotRes,
-    );
+    const secondTarget = await Target.create({
+      targetNumber: 5,
+      sessionId: session._id,
+      userId,
+      shots: [],
+    });
+
+    session.targets.push(firstTarget._id, secondTarget._id);
+    await session.save();
+
+    const firstShot = await Shot.create({
+      score: 6,
+      sessionId: session._id,
+      userId,
+      targetId: firstTarget._id,
+      targetNumber: 1,
+    });
+
+    const secondShot = await Shot.create({
+      score: 8,
+      sessionId: session._id,
+      userId,
+      targetId: secondTarget._id,
+      targetNumber: 5,
+    });
+
+    firstTarget.shots.push(firstShot._id);
+    secondTarget.shots.push(secondShot._id);
+    await firstTarget.save();
+    await secondTarget.save();
 
     const res = createMockResponse();
     await getShotsBySession(
@@ -296,12 +361,18 @@ describe("shotController session statistics", () => {
     );
 
     expect(res.body).toHaveLength(2);
-    expect(res.body[0].targetNumber).toBe(1);
+    expect(res.body.map((target) => target.targetNumber)).toEqual([1, 2]);
     expect(res.body[0].shots).toHaveLength(1);
     expect(res.body[0].shots[0].score).toBe(6);
-    expect(res.body[1].targetNumber).toBe(2);
+    expect(res.body[0].shots[0].targetNumber).toBe(1);
     expect(res.body[1].shots).toHaveLength(1);
     expect(res.body[1].shots[0].score).toBe(8);
+    expect(res.body[1].shots[0].targetNumber).toBe(2);
+
+    const updatedShots = await Shot.find({ sessionId: session._id })
+      .sort({ score: 1 })
+      .lean();
+    expect(updatedShots.map((shot) => shot.targetNumber)).toEqual([1, 2]);
   });
 
   it("recalculates statistics when updating a shot", async () => {

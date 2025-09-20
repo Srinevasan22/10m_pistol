@@ -117,6 +117,11 @@ export const listTargets = async (req, res) => {
       return res.status(status).json({ error });
     }
 
+    await resequenceTargetsForSession({
+      sessionId: normalizedSessionId,
+      userId: normalizedUserId,
+    });
+
     const targets = await Target.find({
       sessionId: normalizedSessionId,
       userId: normalizedUserId,
