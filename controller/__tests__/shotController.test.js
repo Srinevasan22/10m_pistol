@@ -500,4 +500,56 @@ describe("shotController session statistics", () => {
     remainingTargets = await Target.find({ sessionId: session._id });
     expect(remainingTargets).toHaveLength(0);
   });
+
+  it("deletes a target when a legacy request passes the target identifier to deleteShot", async () => {
+    const baseParams = {
+      sessionId: session._id.toString(),
+      userId: userId.toString(),
+    };
+
+    const addRes = createMockResponse();
+    await addShot(
+      {
+        params: baseParams,
+        body: { score: 9.8, targetNumber: 2 },
+      },
+      addRes,
+    );
+
+    const target = await Target.findOne({
+      sessionId: session._id,
+      userId,
+      targetNumber: 2,
+    });
+
+    expect(target).not.toBeNull();
+
+    const deleteRes = createMockResponse();
+    await deleteShot(
+      {
+        params: {
+          shotId: target._id.toString(),
+          sessionId: session._id.toString(),
+          userId: userId.toString(),
+        },
+      },
+      deleteRes,
+    );
+
+    expect(deleteRes.status).toHaveBeenCalledWith(200);
+    expect(deleteRes.body).toEqual({ message: "Target deleted successfully" });
+
+    const remainingTargets = await Target.find({ sessionId: session._id });
+    expect(remainingTargets).toHaveLength(0);
+
+    const remainingShots = await Shot.find({ sessionId: session._id });
+    expect(remainingShots).toHaveLength(0);
+
+    const updatedSession = await Session.findById(session._id);
+    expect(updatedSession.targets).toHaveLength(0);
+    expect(updatedSession.totalShots).toBe(0);
+    expect(updatedSession.averageScore).toBe(0);
+    expect(updatedSession.maxScore).toBe(0);
+    expect(updatedSession.minScore).toBe(0);
+  });
 });
