@@ -42,6 +42,8 @@ const ensureTargetForSession = async ({ sessionId, userId, targetNumber }) => {
     targetNumber,
   });
 
+  let created = false;
+
   if (!target) {
     target = await Target.create({
       targetNumber,
@@ -49,11 +51,24 @@ const ensureTargetForSession = async ({ sessionId, userId, targetNumber }) => {
       userId: normalizedUserId,
       shots: [],
     });
+    created = true;
   }
 
   await Session.findByIdAndUpdate(normalizedSessionId, {
     $addToSet: { targets: target._id },
   });
+
+  if (created) {
+    await resequenceTargetsForSession({
+      sessionId: normalizedSessionId,
+      userId: normalizedUserId,
+    });
+
+    const refreshedTarget = await Target.findById(target._id);
+    if (refreshedTarget) {
+      target = refreshedTarget;
+    }
+  }
 
   return target;
 };
@@ -160,9 +175,15 @@ export const addShot = async (req, res) => {
     }
 
     const normalizedBody = normalizeTargetMetadata(req.body);
-    const { positionX, positionY, timestamp, ...shotData } = normalizedBody;
+    const {
+      positionX,
+      positionY,
+      timestamp,
+      targetNumber: requestedTargetNumber,
+      ...shotData
+    } = normalizedBody;
 
-    const targetNumber = parseTargetNumber(normalizedBody.targetNumber);
+    const targetNumber = parseTargetNumber(requestedTargetNumber);
 
     if (targetNumber === null || Number.isNaN(targetNumber)) {
       return res.status(400).json({
@@ -184,15 +205,24 @@ export const addShot = async (req, res) => {
         .json({ error: "Unauthorized to add a shot to this session" });
     }
 
-    const target = await ensureTargetForSession({
+    let target = await ensureTargetForSession({
       sessionId,
       userId,
       targetNumber,
     });
 
+    if (!target) {
+      return res
+        .status(500)
+        .json({ error: "Unable to determine the target for this shot" });
+    }
+
+    const effectiveTargetNumber =
+      typeof target.targetNumber === "number" ? target.targetNumber : targetNumber;
+
     const shot = new Shot({
       ...shotData,
-      targetNumber,
+      targetNumber: effectiveTargetNumber,
       sessionId,
       userId,
       targetId: target._id,
