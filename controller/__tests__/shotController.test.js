@@ -85,6 +85,47 @@ describe("shotController session statistics", () => {
     expect(targets[0].shots).toHaveLength(1);
   });
 
+  it("does not return null metadata when optional fields are omitted", async () => {
+    const req = {
+      params: {
+        sessionId: session._id.toString(),
+        userId: userId.toString(),
+      },
+      body: {
+        score: 8,
+        targetNumber: 1,
+      },
+    };
+
+    const res = createMockResponse();
+
+    await addShot(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.body.targetNumber).toBe(1);
+    expect(typeof res.body.targetNumber).toBe("number");
+
+    const optionalMetadata = [
+      "targetIndex",
+      "targetShotIndex",
+      "targetShotNumber",
+    ];
+
+    for (const field of optionalMetadata) {
+      if (Object.prototype.hasOwnProperty.call(res.body, field)) {
+        expect(res.body[field]).not.toBeNull();
+        expect(typeof res.body[field]).toBe("number");
+      } else {
+        expect(res.body[field]).toBeUndefined();
+      }
+    }
+
+    const savedShot = await Shot.findOne({ sessionId: session._id }).lean();
+    for (const field of optionalMetadata) {
+      expect(savedShot[field]).toBeUndefined();
+    }
+  });
+
   it("persists target metadata when adding a shot", async () => {
     const metadata = {
       targetIndex: 1,
