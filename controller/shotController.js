@@ -42,8 +42,6 @@ const ensureTargetForSession = async ({ sessionId, userId, targetNumber }) => {
     targetNumber,
   });
 
-  let created = false;
-
   if (!target) {
     target = await Target.create({
       targetNumber,
@@ -51,23 +49,21 @@ const ensureTargetForSession = async ({ sessionId, userId, targetNumber }) => {
       userId: normalizedUserId,
       shots: [],
     });
-    created = true;
   }
 
   await Session.findByIdAndUpdate(normalizedSessionId, {
     $addToSet: { targets: target._id },
   });
 
-  if (created) {
-    await resequenceTargetsForSession({
-      sessionId: normalizedSessionId,
-      userId: normalizedUserId,
-    });
+  await resequenceTargetsForSession({
+    sessionId: normalizedSessionId,
+    userId: normalizedUserId,
+  });
 
-    const refreshedTarget = await Target.findById(target._id);
-    if (refreshedTarget) {
-      target = refreshedTarget;
-    }
+  const refreshedTarget = await Target.findById(target._id);
+
+  if (refreshedTarget) {
+    return refreshedTarget;
   }
 
   return target;
@@ -263,6 +259,11 @@ export const getShotsBySession = async (req, res) => {
 
     const sessionId = new mongoose.Types.ObjectId(req.params.sessionId);
     const userId = new mongoose.Types.ObjectId(req.params.userId);
+
+    await resequenceTargetsForSession({
+      sessionId,
+      userId,
+    });
 
     const targets = await Target.find({
       sessionId,

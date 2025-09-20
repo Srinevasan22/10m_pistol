@@ -66,7 +66,7 @@ describe("/targets routes", () => {
     expect(target).not.toBeNull();
   });
 
-  it("lists targets sorted by number", async () => {
+  it("lists targets with contiguous numbering", async () => {
     const firstTarget = await Target.create({
       targetNumber: 5,
       sessionId: session._id,
@@ -74,7 +74,7 @@ describe("/targets routes", () => {
       shots: [],
     });
     const secondTarget = await Target.create({
-      targetNumber: 1,
+      targetNumber: 2,
       sessionId: session._id,
       userId: user._id,
       shots: [],
@@ -89,8 +89,12 @@ describe("/targets routes", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(2);
-    expect(res.body[0].targetNumber).toBe(1);
-    expect(res.body[1].targetNumber).toBe(5);
+    expect(res.body.map((target) => target.targetNumber)).toEqual([1, 2]);
+
+    const resequencedTargets = await Target.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+    expect(resequencedTargets.map((target) => target.targetNumber)).toEqual([1, 2]);
   });
 
   it("updates targets, cascades to shots, and resequences numbering", async () => {

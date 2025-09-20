@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import Shot from '../model/shot.js';
 import Session from '../model/session.js';
 import Target from '../model/target.js';
+import { resequenceTargetsForSession } from '../util/targetSequence.js';
 
 // Add a new session
 export const addSession = async (req, res) => {
@@ -50,6 +51,11 @@ export const getSessionById = async (req, res) => {
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
+
+    await resequenceTargetsForSession({
+      sessionId: session._id,
+      userId: session.userId,
+    });
 
     await session.populateTargets();
 
