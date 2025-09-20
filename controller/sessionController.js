@@ -1,3 +1,5 @@
+import mongoose from 'mongoose';
+
 import Shot from '../model/shot.js';
 import Session from '../model/session.js';
 import Target from '../model/target.js';
@@ -16,8 +18,13 @@ export const addSession = async (req, res) => {
 
 // Get all sessions for a specific user
 export const getSessions = async (req, res) => {
+  const { userId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ error: 'Invalid user ID' });
+  }
+
   try {
-    const { userId } = req.params;
     const sessions = await Session.find({ userId });
     res.json(sessions);
   } catch (error) {
@@ -27,8 +34,17 @@ export const getSessions = async (req, res) => {
 
 // Get a session by ID for a specific user, including targets and shots
 export const getSessionById = async (req, res) => {
+  const { userId, sessionId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ error: 'Invalid user ID' });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+    return res.status(400).json({ error: 'Invalid session ID' });
+  }
+
   try {
-    const { userId, sessionId } = req.params;
     const session = await Session.findOne({ _id: sessionId, userId });
 
     if (!session) {
@@ -45,8 +61,17 @@ export const getSessionById = async (req, res) => {
 
 // Update a session by ID for a specific user
 export const updateSession = async (req, res) => {
+  const { userId, sessionId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ error: 'Invalid user ID' });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+    return res.status(400).json({ error: 'Invalid session ID' });
+  }
+
   try {
-    const { userId, sessionId } = req.params;
     const session = await Session.findOneAndUpdate(
       { _id: sessionId, userId },
       req.body,
@@ -68,8 +93,17 @@ export const updateSession = async (req, res) => {
 
 // Delete a session by ID for a specific user
 export const deleteSession = async (req, res) => {
+  const { userId, sessionId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ error: 'Invalid user ID' });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+    return res.status(400).json({ error: 'Invalid session ID' });
+  }
+
   try {
-    const { userId, sessionId } = req.params;
     const session = await Session.findOneAndDelete({ _id: sessionId, userId });
 
     if (!session) {
