@@ -4,6 +4,10 @@ import Session from "../model/session.js";
 import Shot from "../model/shot.js";
 import { recalculateSessionStats } from "../util/sessionStats.js";
 import { resequenceTargetsForSession } from "../util/targetSequence.js";
+import {
+  resolveTargetNumber,
+  TARGET_IDENTIFIER_KEYS,
+} from "../util/targetRequestParsing.js";
 
 const parseTargetNumber = (value) => {
   if (value === undefined || value === null) {
@@ -35,6 +39,32 @@ const toObjectId = (value) => {
   return null;
 };
 
+const extractTargetId = (value) => {
+  const direct = toObjectId(value);
+
+  if (direct) {
+    return direct;
+  }
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  for (const key of TARGET_IDENTIFIER_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) {
+      continue;
+    }
+
+    const candidate = toObjectId(value[key]);
+
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return null;
+};
+
 const validateOwnership = async ({ sessionId, userId }) => {
   const session = await Session.findById(sessionId);
 
@@ -60,11 +90,19 @@ export const createTarget = async (req, res) => {
     const normalizedSessionId = new mongoose.Types.ObjectId(sessionId);
     const normalizedUserId = new mongoose.Types.ObjectId(userId);
 
-    const targetNumber = parseTargetNumber(req.body?.targetNumber);
-    if (targetNumber === null || Number.isNaN(targetNumber)) {
-      return res
-        .status(400)
-        .json({ error: "targetNumber is required and must be a non-negative integer" });
+    const { number: requestedTargetNumber, provided: hasTargetNumber } =
+      resolveTargetNumber(req.body ?? {});
+
+    let targetNumber;
+
+    if (hasTargetNumber) {
+      targetNumber = parseTargetNumber(requestedTargetNumber);
+
+      if (targetNumber === null || Number.isNaN(targetNumber)) {
+        return res.status(400).json({
+          error: "targetNumber is required and must be a non-negative integer",
+        });
+      }
     }
 
     const { status, error } = await validateOwnership({
@@ -76,16 +114,25 @@ export const createTarget = async (req, res) => {
       return res.status(status).json({ error });
     }
 
-    const existingTarget = await Target.findOne({
-      sessionId: normalizedSessionId,
-      userId: normalizedUserId,
-      targetNumber,
-    });
+    if (!hasTargetNumber) {
+      const existingCount = await Target.countDocuments({
+        sessionId: normalizedSessionId,
+        userId: normalizedUserId,
+      });
 
-    if (existingTarget) {
-      return res
-        .status(409)
-        .json({ error: "A target with this targetNumber already exists for the session" });
+      targetNumber = existingCount + 1;
+    } else {
+      const existingTarget = await Target.findOne({
+        sessionId: normalizedSessionId,
+        userId: normalizedUserId,
+        targetNumber,
+      });
+
+      if (existingTarget) {
+        return res.status(409).json({
+          error: "A target with this targetNumber already exists for the session",
+        });
+      }
     }
 
     const target = await Target.create({
@@ -190,13 +237,16 @@ export const updateTarget = async (req, res) => {
       return res.status(404).json({ error: "Target not found" });
     }
 
-    if (!Object.prototype.hasOwnProperty.call(req.body ?? {}, "targetNumber")) {
+    const { number: requestedTargetNumber, provided: hasTargetNumber } =
+      resolveTargetNumber(req.body ?? {});
+
+    if (!hasTargetNumber) {
       return res
         .status(400)
         .json({ error: "targetNumber is required to update a target" });
     }
 
-    const nextTargetNumber = parseTargetNumber(req.body.targetNumber);
+    const nextTargetNumber = parseTargetNumber(requestedTargetNumber);
 
     if (nextTargetNumber === null || Number.isNaN(nextTargetNumber)) {
       return res
@@ -330,21 +380,11 @@ export const reorderTargets = async (req, res) => {
         .json({ error: "targetOrder must be an array of target identifiers" });
     }
 
-    const normalizedTargetIds = req.body.targetOrder
-      .map((value) => toObjectId(value))
-      .filter((value) => value !== null);
-
-    if (normalizedTargetIds.length !== req.body.targetOrder.length) {
-      return res
-        .status(400)
-        .json({ error: "targetOrder contains an invalid target identifier" });
-    }
-
     const existingTargets = await Target.find({
       sessionId: normalizedSessionId,
       userId: normalizedUserId,
     })
-      .select({ _id: 1 })
+      .select({ _id: 1, targetNumber: 1 })
       .lean();
 
     if (existingTargets.length === 0) {
@@ -352,10 +392,76 @@ export const reorderTargets = async (req, res) => {
       return res.json([]);
     }
 
-    if (normalizedTargetIds.length === 0) {
+    if (req.body.targetOrder.length === 0) {
       return res
         .status(400)
         .json({ error: "targetOrder must include at least one target" });
+    }
+
+    const existingTargetIdMap = new Map(
+      existingTargets.map((target) => [target._id.toString(), target._id]),
+    );
+    const existingTargetNumberMap = new Map();
+
+    for (const target of existingTargets) {
+      if (typeof target.targetNumber === "number") {
+        existingTargetNumberMap.set(target.targetNumber, target._id);
+      }
+    }
+
+    const normalizedTargetIds = [];
+
+    for (const item of req.body.targetOrder) {
+      const explicitId = extractTargetId(item);
+
+      if (explicitId) {
+        const idString = explicitId.toString();
+
+        if (!existingTargetIdMap.has(idString)) {
+          return res
+            .status(400)
+            .json({ error: "targetOrder includes an unknown target" });
+        }
+
+        normalizedTargetIds.push(existingTargetIdMap.get(idString));
+        continue;
+      }
+
+      const { number: extractedNumber, provided } = resolveTargetNumber(item);
+
+      if (provided) {
+        if (Number.isNaN(extractedNumber)) {
+          return res
+            .status(400)
+            .json({ error: "targetOrder contains an invalid target identifier" });
+        }
+
+        let targetIdForNumber = existingTargetNumberMap.get(extractedNumber);
+
+        if (!targetIdForNumber && extractedNumber >= 0) {
+          const candidate = existingTargetNumberMap.get(extractedNumber + 1);
+
+          if (
+            !existingTargetNumberMap.has(extractedNumber) &&
+            candidate
+          ) {
+            targetIdForNumber = candidate;
+          }
+        }
+
+        if (!targetIdForNumber) {
+          return res
+            .status(400)
+            .json({ error: "targetOrder includes an unknown target" });
+        }
+
+        normalizedTargetIds.push(targetIdForNumber);
+        continue;
+      }
+
+      return res
+        .status(400)
+        .json({ error: "targetOrder contains an invalid target identifier" });
     }
 
     if (normalizedTargetIds.length !== existingTargets.length) {
@@ -364,19 +470,10 @@ export const reorderTargets = async (req, res) => {
         .json({ error: "targetOrder must include all targets for the session" });
     }
 
-    const existingTargetIds = new Set(existingTargets.map((target) => target._id.toString()));
     const requestedTargetIds = normalizedTargetIds.map((id) => id.toString());
 
     if (new Set(requestedTargetIds).size !== requestedTargetIds.length) {
       return res.status(400).json({ error: "targetOrder must not contain duplicates" });
-    }
-
-    const unknownTargetId = requestedTargetIds.find(
-      (targetId) => !existingTargetIds.has(targetId),
-    );
-
-    if (unknownTargetId) {
-      return res.status(400).json({ error: "targetOrder includes an unknown target" });
     }
 
     const temporaryStart = normalizedTargetIds.length + 1;

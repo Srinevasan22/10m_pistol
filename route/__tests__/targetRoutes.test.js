@@ -66,6 +66,32 @@ describe("/targets routes", () => {
     expect(target).not.toBeNull();
   });
 
+  it("creates targets when the target number is not provided", async () => {
+    const firstRes = await request(app)
+      .post(
+        `/pistol/users/${user._id.toString()}/sessions/${session._id.toString()}/targets`,
+      )
+      .send({});
+
+    expect(firstRes.status).toBe(201);
+    expect(firstRes.body.targetNumber).toBe(1);
+
+    const secondRes = await request(app)
+      .post(
+        `/pistol/users/${user._id.toString()}/sessions/${session._id.toString()}/targets`,
+      )
+      .send({});
+
+    expect(secondRes.status).toBe(201);
+    expect(secondRes.body.targetNumber).toBe(2);
+
+    const targets = await Target.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+
+    expect(targets.map((target) => target.targetNumber)).toEqual([1, 2]);
+  });
+
   it("lists targets with contiguous numbering", async () => {
     const firstTarget = await Target.create({
       targetNumber: 5,
@@ -214,9 +240,9 @@ describe("/targets routes", () => {
       )
       .send({
         targetOrder: [
-          thirdTarget._id.toString(),
-          firstTarget._id.toString(),
-          secondTarget._id.toString(),
+          3,
+          { _id: firstTarget._id.toString() },
+          { target_index: 1 },
         ],
       });
 

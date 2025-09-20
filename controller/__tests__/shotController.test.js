@@ -214,6 +214,51 @@ describe("shotController session statistics", () => {
     expect(res.body.targetShotNumber).toBe(2);
   });
 
+  it("derives target numbers from targetIndex when targetNumber is omitted", async () => {
+    const baseParams = {
+      sessionId: session._id.toString(),
+      userId: userId.toString(),
+    };
+
+    const firstRes = createMockResponse();
+    await addShot(
+      {
+        params: baseParams,
+        body: { score: 9, targetIndex: 0 },
+      },
+      firstRes,
+    );
+
+    expect(firstRes.status).toHaveBeenCalledWith(201);
+    expect(firstRes.body.targetNumber).toBe(1);
+
+    const secondRes = createMockResponse();
+    await addShot(
+      {
+        params: baseParams,
+        body: { score: 8, targetIndex: 1 },
+      },
+      secondRes,
+    );
+
+    expect(secondRes.status).toHaveBeenCalledWith(201);
+    expect(secondRes.body.targetNumber).toBe(2);
+
+    const targets = await Target.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+
+    expect(targets).toHaveLength(2);
+    expect(targets.map((target) => target.targetNumber)).toEqual([1, 2]);
+
+    const shots = await Shot.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+
+    expect(shots).toHaveLength(2);
+    expect(shots.map((shot) => shot.targetNumber)).toEqual([1, 2]);
+  });
+
   it("resequences targets when a shot skips ahead in numbering", async () => {
     const params = {
       sessionId: session._id.toString(),
