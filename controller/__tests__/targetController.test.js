@@ -18,6 +18,7 @@ import {
   listTargets,
   updateTarget,
   deleteTarget,
+  reorderTargets,
 } from "../targetController.js";
 
 jest.setTimeout(60000);
@@ -355,6 +356,100 @@ describe("targetController", () => {
     expect(remainingTargets).toHaveLength(1);
     expect(remainingTargets[0]._id.toString()).toBe(firstTarget._id.toString());
     expect(remainingTargets[0].targetNumber).toBe(1);
+  });
+
+  it("reorders targets according to the provided order and cascades updates", async () => {
+    const firstTarget = await Target.create({
+      targetNumber: 1,
+      sessionId: session._id,
+      userId,
+      shots: [],
+    });
+    const secondTarget = await Target.create({
+      targetNumber: 2,
+      sessionId: session._id,
+      userId,
+      shots: [],
+    });
+    const thirdTarget = await Target.create({
+      targetNumber: 3,
+      sessionId: session._id,
+      userId,
+      shots: [],
+    });
+
+    session.targets.push(firstTarget._id, secondTarget._id, thirdTarget._id);
+    await session.save();
+
+    const firstShot = await Shot.create({
+      score: 9,
+      sessionId: session._id,
+      userId,
+      targetId: firstTarget._id,
+      targetNumber: 1,
+    });
+    const secondShot = await Shot.create({
+      score: 8,
+      sessionId: session._id,
+      userId,
+      targetId: secondTarget._id,
+      targetNumber: 2,
+    });
+    const thirdShot = await Shot.create({
+      score: 10,
+      sessionId: session._id,
+      userId,
+      targetId: thirdTarget._id,
+      targetNumber: 3,
+    });
+
+    firstTarget.shots.push(firstShot._id);
+    secondTarget.shots.push(secondShot._id);
+    thirdTarget.shots.push(thirdShot._id);
+    await Promise.all([firstTarget.save(), secondTarget.save(), thirdTarget.save()]);
+
+    const req = {
+      params: {
+        sessionId: session._id.toString(),
+        userId: userId.toString(),
+      },
+      body: {
+        targetOrder: [
+          thirdTarget._id.toString(),
+          firstTarget._id.toString(),
+          secondTarget._id.toString(),
+        ],
+      },
+    };
+
+    const res = createMockResponse();
+    await reorderTargets(req, res);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.map((target) => target._id.toString())).toEqual([
+      thirdTarget._id.toString(),
+      firstTarget._id.toString(),
+      secondTarget._id.toString(),
+    ]);
+    expect(res.body.map((target) => target.targetNumber)).toEqual([1, 2, 3]);
+
+    const [firstShotAfter, secondShotAfter, thirdShotAfter] = await Promise.all([
+      Shot.findById(firstShot._id),
+      Shot.findById(secondShot._id),
+      Shot.findById(thirdShot._id),
+    ]);
+
+    expect(firstShotAfter.targetNumber).toBe(2);
+    expect(secondShotAfter.targetNumber).toBe(3);
+    expect(thirdShotAfter.targetNumber).toBe(1);
+
+    const sessionAfter = await Session.findById(session._id);
+    expect(sessionAfter.targets.map((id) => id.toString())).toEqual([
+      thirdTarget._id.toString(),
+      firstTarget._id.toString(),
+      secondTarget._id.toString(),
+    ]);
   });
 
   it("rejects duplicate target numbers", async () => {
