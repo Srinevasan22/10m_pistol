@@ -18,6 +18,13 @@ import {
   deleteShot
 } from '../controller/shotController.js';
 
+import {
+  createTarget,
+  listTargets,
+  updateTarget,
+  deleteTarget,
+} from '../controller/targetController.js';
+
 // Route to add a new session for a specific user
 // @route POST /pistol/users/:userId/sessions
 router.post('/', addSession);
@@ -37,6 +44,24 @@ router.put('/:sessionId', updateSession);
 // Route to delete a session by its ID for a specific user
 // @route DELETE /pistol/users/:userId/sessions/:sessionId
 router.delete('/:sessionId', deleteSession);
+
+// Routes for managing targets within a session for a specific user
+
+// Route to create a new target within a session for a specific user
+// @route POST /pistol/users/:userId/sessions/:sessionId/targets
+router.post('/:sessionId/targets', createTarget);
+
+// Route to list targets within a session for a specific user
+// @route GET /pistol/users/:userId/sessions/:sessionId/targets
+router.get('/:sessionId/targets', listTargets);
+
+// Route to update a target within a session for a specific user
+// @route PUT /pistol/users/:userId/sessions/:sessionId/targets/:targetId
+router.put('/:sessionId/targets/:targetId', updateTarget);
+
+// Route to delete a target within a session for a specific user
+// @route DELETE /pistol/users/:userId/sessions/:sessionId/targets/:targetId
+router.delete('/:sessionId/targets/:targetId', deleteTarget);
 
 // Routes for managing shots within a session for a specific user
 
