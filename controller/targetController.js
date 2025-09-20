@@ -3,6 +3,7 @@ import Target from "../model/target.js";
 import Session from "../model/session.js";
 import Shot from "../model/shot.js";
 import { recalculateSessionStats } from "../util/sessionStats.js";
+import { resequenceTargetsForSession } from "../util/targetSequence.js";
 
 const parseTargetNumber = (value) => {
   if (value === undefined || value === null) {
@@ -198,7 +199,14 @@ export const updateTarget = async (req, res) => {
 
     await target.save();
 
-    return res.json(target);
+    await resequenceTargetsForSession({
+      sessionId: normalizedSessionId,
+      userId: normalizedUserId,
+    });
+
+    const resequencedTarget = await Target.findById(target._id);
+
+    return res.json(resequencedTarget);
   } catch (error) {
     console.error("Error updating target:", error.message);
     return res.status(500).json({ error: error.message });
@@ -249,6 +257,11 @@ export const deleteTarget = async (req, res) => {
     await target.deleteOne();
 
     await recalculateSessionStats(normalizedSessionId);
+
+    await resequenceTargetsForSession({
+      sessionId: normalizedSessionId,
+      userId: normalizedUserId,
+    });
 
     return res.json({ message: "Target deleted successfully" });
   } catch (error) {

@@ -139,49 +139,72 @@ describe("targetController", () => {
     expect(res.body[1].shots[0].score).toBe(9);
   });
 
-  it("updates the target number and cascades to shots", async () => {
-    const createReq = {
-      params: {
-        sessionId: session._id.toString(),
-        userId: userId.toString(),
-      },
-      body: { targetNumber: 3 },
-    };
+  it("updates target numbers, cascades to shots, and resequences remaining targets", async () => {
+    const firstTarget = await Target.create({
+      targetNumber: 1,
+      sessionId: session._id,
+      userId,
+      shots: [],
+    });
+    const secondTarget = await Target.create({
+      targetNumber: 2,
+      sessionId: session._id,
+      userId,
+      shots: [],
+    });
 
-    const createRes = createMockResponse();
-    await createTarget(createReq, createRes);
+    session.targets.push(firstTarget._id, secondTarget._id);
+    await session.save();
 
-    const target = await Target.findOne({ sessionId: session._id });
-
-    const shot = await Shot.create({
+    const firstShot = await Shot.create({
       score: 8,
       sessionId: session._id,
       userId,
-      targetId: target._id,
-      targetNumber: 3,
+      targetId: firstTarget._id,
+      targetNumber: 1,
+    });
+    const secondShot = await Shot.create({
+      score: 7,
+      sessionId: session._id,
+      userId,
+      targetId: secondTarget._id,
+      targetNumber: 2,
     });
 
-    target.shots.push(shot._id);
-    await target.save();
+    firstTarget.shots.push(firstShot._id);
+    secondTarget.shots.push(secondShot._id);
+    await firstTarget.save();
+    await secondTarget.save();
 
     const updateReq = {
       params: {
         sessionId: session._id.toString(),
         userId: userId.toString(),
-        targetId: target._id.toString(),
+        targetId: secondTarget._id.toString(),
       },
-      body: { targetNumber: 5 },
+      body: { targetNumber: 0 },
     };
 
     const updateRes = createMockResponse();
     await updateTarget(updateReq, updateRes);
 
     expect(updateRes.status).not.toHaveBeenCalled();
-    const updatedTarget = await Target.findById(target._id);
-    expect(updatedTarget.targetNumber).toBe(5);
+    expect(updateRes.body.targetNumber).toBe(1);
 
-    const updatedShot = await Shot.findById(shot._id);
-    expect(updatedShot.targetNumber).toBe(5);
+    const resequencedTargets = await Target.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+
+    expect(resequencedTargets).toHaveLength(2);
+    expect(resequencedTargets[0]._id.toString()).toBe(secondTarget._id.toString());
+    expect(resequencedTargets[0].targetNumber).toBe(1);
+    expect(resequencedTargets[1]._id.toString()).toBe(firstTarget._id.toString());
+    expect(resequencedTargets[1].targetNumber).toBe(2);
+
+    const updatedFirstShot = await Shot.findById(firstShot._id);
+    expect(updatedFirstShot.targetNumber).toBe(2);
+    const updatedSecondShot = await Shot.findById(secondShot._id);
+    expect(updatedSecondShot.targetNumber).toBe(1);
   });
 
   it("deletes targets, removes references, and recalculates stats", async () => {
@@ -246,6 +269,45 @@ describe("targetController", () => {
 
     const remainingShots = await Shot.find({ sessionId: session._id });
     expect(remainingShots).toHaveLength(0);
+  });
+
+  it("resequences target numbers after deletion", async () => {
+    const firstTarget = await Target.create({
+      targetNumber: 1,
+      sessionId: session._id,
+      userId,
+      shots: [],
+    });
+    const secondTarget = await Target.create({
+      targetNumber: 3,
+      sessionId: session._id,
+      userId,
+      shots: [],
+    });
+
+    session.targets.push(firstTarget._id, secondTarget._id);
+    await session.save();
+
+    const deleteReq = {
+      params: {
+        sessionId: session._id.toString(),
+        userId: userId.toString(),
+        targetId: secondTarget._id.toString(),
+      },
+    };
+
+    const deleteRes = createMockResponse();
+    await deleteTarget(deleteReq, deleteRes);
+
+    expect(deleteRes.status).not.toHaveBeenCalled();
+
+    const remainingTargets = await Target.find({ sessionId: session._id })
+      .sort({ targetNumber: 1 })
+      .lean();
+
+    expect(remainingTargets).toHaveLength(1);
+    expect(remainingTargets[0]._id.toString()).toBe(firstTarget._id.toString());
+    expect(remainingTargets[0].targetNumber).toBe(1);
   });
 
   it("rejects duplicate target numbers", async () => {

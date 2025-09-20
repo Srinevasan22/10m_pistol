@@ -409,7 +409,7 @@ describe("shotController session statistics", () => {
 
     const updatedShot = await Shot.findById(shot._id);
     expect(updatedShot.targetIndex).toBe(updateMetadata.targetIndex);
-    expect(updatedShot.targetNumber).toBe(updateMetadata.targetNumber);
+    expect(updatedShot.targetNumber).toBe(1);
     expect(updatedShot.targetShotIndex).toBe(updateMetadata.targetShotIndex);
     expect(updatedShot.targetShotNumber).toBe(updateMetadata.targetShotNumber);
 
@@ -417,13 +417,13 @@ describe("shotController session statistics", () => {
       .sort({ targetNumber: 1 })
       .lean();
     expect(targets).toHaveLength(1);
-    expect(targets[0].targetNumber).toBe(updateMetadata.targetNumber);
+    expect(targets[0].targetNumber).toBe(1);
     expect(targets[0].shots).toHaveLength(1);
     expect(targets[0].shots[0].toString()).toBe(updatedShot._id.toString());
     expect(updatedShot.targetId.toString()).toBe(targets[0]._id.toString());
 
     expect(updateRes.body.targetIndex).toBe(updateMetadata.targetIndex);
-    expect(updateRes.body.targetNumber).toBe(updateMetadata.targetNumber);
+    expect(updateRes.body.targetNumber).toBe(1);
     expect(updateRes.body.targetShotIndex).toBe(updateMetadata.targetShotIndex);
     expect(updateRes.body.targetShotNumber).toBe(updateMetadata.targetShotNumber);
   });
@@ -477,7 +477,7 @@ describe("shotController session statistics", () => {
       targetNumber: 1,
     });
     expect(remainingTargets).toHaveLength(1);
-    expect(remainingTargets[0].targetNumber).toBe(2);
+    expect(remainingTargets[0].targetNumber).toBe(1);
 
     const deleteResSecond = createMockResponse();
     await deleteShot(

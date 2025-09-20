@@ -4,6 +4,7 @@ import Session from "../model/session.js";
 import Target from "../model/target.js";
 import { recalculateSessionStats } from "../util/sessionStats.js";
 import { normalizeTargetMetadata } from "../util/shotMetadata.js";
+import { resequenceTargetsForSession } from "../util/targetSequence.js";
 
 const sanitizeShotResponse = (shotDoc) => {
   if (!shotDoc) {
@@ -69,6 +70,11 @@ const cleanupTargetIfEmpty = async ({ targetId, sessionId }) => {
     await Session.findByIdAndUpdate(sessionId, {
       $pull: { targets: targetId },
     });
+
+    await resequenceTargetsForSession({
+      sessionId,
+      userId: target.userId,
+    });
   }
 };
 
@@ -111,6 +117,11 @@ const tryDeleteTargetFromShotRequest = async (req, res) => {
   await target.deleteOne();
 
   await recalculateSessionStats(target.sessionId);
+
+  await resequenceTargetsForSession({
+    sessionId: target.sessionId,
+    userId: target.userId,
+  });
 
   res.status(200).json({ message: "Target deleted successfully" });
   return true;
@@ -339,6 +350,12 @@ export const updateShot = async (req, res) => {
           targetId: previousTargetId,
           sessionId: shot.sessionId,
         });
+
+        const refreshedTarget = await Target.findById(target._id);
+
+        if (refreshedTarget) {
+          shot.targetNumber = refreshedTarget.targetNumber;
+        }
       } else {
         shot.targetNumber = nextTargetNumber;
       }
