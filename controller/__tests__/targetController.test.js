@@ -122,6 +122,67 @@ describe("targetController", () => {
     expect(targets.map((target) => target.targetNumber)).toEqual([1, 2]);
   });
 
+  it("retries automatic numbering when another target is created concurrently", async () => {
+    const existingTarget = await Target.create({
+      targetNumber: 1,
+      sessionId: session._id,
+      userId,
+      shots: [],
+    });
+
+    session.targets.push(existingTarget._id);
+    await session.save();
+
+    const originalCreate = Target.create.bind(Target);
+    const createSpy = jest.spyOn(Target, "create");
+
+    try {
+      createSpy.mockImplementationOnce(async (doc) => {
+        const competitor = await originalCreate({
+          targetNumber: doc.targetNumber,
+          sessionId: doc.sessionId,
+          userId: doc.userId,
+          shots: [],
+        });
+
+        await Session.findByIdAndUpdate(doc.sessionId, {
+          $addToSet: { targets: competitor._id },
+        });
+
+        const error = new Error("duplicate key error");
+        error.code = 11000;
+        throw error;
+      });
+
+      createSpy.mockImplementation(originalCreate);
+
+      const res = createMockResponse();
+
+      await createTarget(
+        {
+          params: {
+            sessionId: session._id.toString(),
+            userId: userId.toString(),
+          },
+          body: {},
+        },
+        res,
+      );
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(res.body.targetNumber).toBe(3);
+
+      const targets = await Target.find({ sessionId: session._id })
+        .sort({ targetNumber: 1 })
+        .lean();
+
+      expect(targets).toHaveLength(3);
+      expect(targets.map((target) => target.targetNumber)).toEqual([1, 2, 3]);
+    } finally {
+      createSpy.mockRestore();
+    }
+  });
+
   it("resequences numbering when targets are created with skipped values", async () => {
     const firstRes = createMockResponse();
     await createTarget(
