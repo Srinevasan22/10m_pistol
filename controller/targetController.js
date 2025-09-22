@@ -114,33 +114,73 @@ export const createTarget = async (req, res) => {
       return res.status(status).json({ error });
     }
 
-    if (!hasTargetNumber) {
-      const existingCount = await Target.countDocuments({
-        sessionId: normalizedSessionId,
-        userId: normalizedUserId,
-      });
+    const attemptCreateTarget = async (candidateNumber) => {
+      try {
+        return await Target.create({
+          targetNumber: candidateNumber,
+          sessionId: normalizedSessionId,
+          userId: normalizedUserId,
+          shots: [],
+        });
+      } catch (creationError) {
+        if (creationError?.code === 11000) {
+          return null;
+        }
 
-      targetNumber = existingCount + 1;
+        throw creationError;
+      }
+    };
+
+    let target;
+
+    if (!hasTargetNumber) {
+      const MAX_ATTEMPTS = 5;
+      let attempts = 0;
+
+      while (!target && attempts < MAX_ATTEMPTS) {
+        const highestTarget = await Target.findOne({
+          sessionId: normalizedSessionId,
+          userId: normalizedUserId,
+        })
+          .sort({ targetNumber: -1 })
+          .select({ targetNumber: 1 })
+          .lean();
+
+        const candidateNumber = (highestTarget?.targetNumber ?? 0) + 1;
+        target = await attemptCreateTarget(candidateNumber);
+        attempts += 1;
+      }
+
+      if (!target) {
+        return res
+          .status(500)
+          .json({ error: "Unable to assign a unique target number" });
+      }
+
+      targetNumber = target.targetNumber;
     } else {
       const existingTarget = await Target.findOne({
         sessionId: normalizedSessionId,
         userId: normalizedUserId,
         targetNumber,
-      });
+      })
+        .select({ _id: 1 })
+        .lean();
 
       if (existingTarget) {
         return res.status(409).json({
           error: "A target with this targetNumber already exists for the session",
         });
       }
-    }
 
-    const target = await Target.create({
-      targetNumber,
-      sessionId: normalizedSessionId,
-      userId: normalizedUserId,
-      shots: [],
-    });
+      target = await attemptCreateTarget(targetNumber);
+
+      if (!target) {
+        return res.status(409).json({
+          error: "A target with this targetNumber already exists for the session",
+        });
+      }
+    }
 
     await Session.findByIdAndUpdate(normalizedSessionId, {
       $addToSet: { targets: target._id },
