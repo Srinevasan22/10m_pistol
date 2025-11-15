@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import connectDB from "./util/db.js";
 import sessionRoutes from "./route/sessionRoutes.js";
 import userRoutes from "./route/userRoutes.js";
+import authRoutes from "./route/authRoutes.js";
 import legacyShotRoutes from "./route/legacyShotRoutes.js";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -104,6 +105,7 @@ app.get("/health", (req, res) => {
 
 // Routes
 app.use("/pistol/users", userRoutes); // Base route for users
+app.use("/pistol/auth", authRoutes);
 
 // Nested session and shot routes to include userId
 app.use("/pistol/users/:userId/sessions", sessionRoutes);
