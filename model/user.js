@@ -7,6 +7,35 @@ const userSchema = new mongoose.Schema({
     unique: true,
     trim: true,
   },
+
+  // NEW: optional email for real login + Google
+  email: {
+    type: String,
+    trim: true,
+    lowercase: true,
+    unique: true,
+    sparse: true, // allows multiple null/undefined
+  },
+
+  // NEW: hashed password for email/password accounts
+  passwordHash: {
+    type: String,
+  },
+
+  // NEW: optional Google ID so we can link Google logins
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true,
+  },
+
+  // NEW: remember how the account was created (dev, password, google)
+  provider: {
+    type: String,
+    enum: ['dev', 'password', 'google'],
+    default: 'dev',
+  },
+
   createdAt: {
     type: Date,
     default: Date.now,
