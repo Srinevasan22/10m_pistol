@@ -1,5 +1,12 @@
 import express from 'express';
+import multer from 'multer';
+import { scanTargetAndCreateShots } from '../controller/scanController.js';
 const router = express.Router({ mergeParams: true }); // Merge parent route parameters into the router
+
+const upload = multer({
+  dest: 'uploads/targets',
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 import {
   addSession,
@@ -92,5 +99,13 @@ router.put('/:sessionId/shots/:shotId', updateShot);
 // Route to delete a shot by its ID within a session for a specific user
 // @route DELETE /pistol/users/:userId/sessions/:sessionId/shots/:shotId
 router.delete('/:sessionId/shots/:shotId', deleteShot);
+
+// Scan target image and auto-create shots for a session
+// POST /pistol/users/:userId/sessions/:sessionId/scan-target
+router.post(
+  '/:sessionId/scan-target',
+  upload.single('image'),
+  scanTargetAndCreateShots,
+);
 
 export default router;

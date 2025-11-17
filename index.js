@@ -41,6 +41,12 @@ if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir);
 }
 
+// Ensure upload directory for scanned targets exists
+const uploadsDir = path.join(__dirname, "uploads", "targets");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 // Set up Winston logger
 const logger = winston.createLogger({
   level: "info",
