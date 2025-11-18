@@ -28,7 +28,22 @@ export const computeShotScore = ({
   const scoringMode = normalizeScoringMode(mode);
 
   const rings = Array.isArray(config?.rings) ? config.rings : [];
-  const distance = Math.sqrt(safeX * safeX + safeY * safeY);
+  const outerRadius =
+    typeof config?.outerRadius === "number" && config.outerRadius > 0
+      ? config.outerRadius
+      : 1;
+
+  // Coordinates coming from the scanner are normalized to [-1, 1] where 1
+  // represents the outer scoring ring. Manual inputs may already be in
+  // millimetres, so we only scale very small values that clearly fall inside
+  // the normalized range.
+  const maxAbsCoordinate = Math.max(Math.abs(safeX), Math.abs(safeY));
+  const shouldTreatAsNormalized = maxAbsCoordinate <= 1.5;
+
+  const scaledX = shouldTreatAsNormalized ? safeX * outerRadius : safeX;
+  const scaledY = shouldTreatAsNormalized ? safeY * outerRadius : safeY;
+
+  const distance = Math.sqrt(scaledX * scaledX + scaledY * scaledY);
 
   const matchedRing = rings.find((ring) => {
     if (!ring || typeof ring.outerRadius !== "number") {
