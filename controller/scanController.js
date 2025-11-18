@@ -13,6 +13,22 @@ import {
   toAbsoluteUploadsPath,
 } from '../util/uploadPaths.js';
 
+const serializeShot = (shotDoc) => {
+  if (!shotDoc) {
+    return null;
+  }
+
+  const shotObject =
+    typeof shotDoc.toObject === 'function'
+      ? shotDoc.toObject({ versionKey: false })
+      : { ...shotDoc };
+
+  delete shotObject.__v;
+  delete shotObject._doc;
+
+  return shotObject;
+};
+
 const fakeDetectShotsFromImage = (imagePath) => {
   if (!imagePath) {
     return [];
@@ -252,12 +268,21 @@ export const scanTargetAndCreateShots = async (req, res) => {
       debugImageUrl: buildPublicUploadUrl(targetObject.debugImagePath),
     };
 
+    const serializedShots = createdShots
+      .map((shot) => serializeShot(shot))
+      .filter(Boolean);
+
+    const responseTarget = {
+      ...enhancedTarget,
+      shots: serializedShots,
+    };
+
     res.status(201).json({
       message: usedStub
         ? 'Shots detected and saved from scanned target (stub)'
         : 'Shots detected and saved from scanned target',
-      shots: createdShots,
-      target: enhancedTarget,
+      shots: serializedShots,
+      target: responseTarget,
     });
   } catch (error) {
     console.error('Error scanning target image', error);
