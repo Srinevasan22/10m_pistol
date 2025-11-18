@@ -15,28 +15,71 @@ const resolveScoringMode = (session) => {
   return normalizeScoringMode(desiredMode);
 };
 
-const assignComputedScoresToShot = ({ shot, scoringMode }) => {
-  if (!shot) {
-    return;
+const clampScoreValue = (value, min, max) => {
+  if (value === undefined || value === null) {
+    return null;
   }
 
-  const { ringScore, decimalScore, isInnerTen } = computeShotScore({
-    x:
-      typeof shot.positionX === "number"
-        ? shot.positionX
-        : Number(shot.positionX) || 0,
-    y:
-      typeof shot.positionY === "number"
-        ? shot.positionY
-        : Number(shot.positionY) || 0,
-    config: PISTOL_10M_CONFIG,
-    mode: scoringMode,
-  });
+  const numericValue =
+    typeof value === "number" ? value : Number.parseFloat(value);
 
-  shot.ringScore = ringScore;
-  shot.decimalScore = decimalScore;
-  shot.isInnerTen = isInnerTen;
-  shot.score = scoringMode === "decimal" ? decimalScore : ringScore;
+  if (!Number.isFinite(numericValue)) {
+    return null;
+  }
+
+  let clamped = numericValue;
+
+  if (typeof min === "number") {
+    clamped = Math.max(clamped, min);
+  }
+
+  if (typeof max === "number") {
+    clamped = Math.min(clamped, max);
+  }
+
+  return clamped;
+};
+
+const resolveShotScoreValues = ({
+  requestedScore,
+  computedScores,
+  scoringMode,
+}) => {
+  const normalizedMode = normalizeScoringMode(scoringMode);
+  const safeComputed = computedScores ?? {
+    ringScore: 0,
+    decimalScore: 0,
+    isInnerTen: false,
+  };
+
+  const manualScore = clampScoreValue(
+    requestedScore,
+    0,
+    normalizedMode === "decimal" ? 10.9 : 10,
+  );
+
+  if (manualScore !== null) {
+    const ringScore = clampScoreValue(manualScore, 0, 10) ?? 0;
+    const decimalScore =
+      normalizedMode === "decimal" ? manualScore : ringScore;
+
+    return {
+      score: decimalScore,
+      ringScore,
+      decimalScore,
+      isInnerTen: false,
+    };
+  }
+
+  return {
+    score:
+      normalizedMode === "decimal"
+        ? safeComputed.decimalScore
+        : safeComputed.ringScore,
+    ringScore: safeComputed.ringScore,
+    decimalScore: safeComputed.decimalScore,
+    isInnerTen: safeComputed.isInnerTen,
+  };
 };
 
 const sanitizeShotResponse = (shotDoc) => {
@@ -262,6 +305,12 @@ export const addShot = async (req, res) => {
       mode: scoringMode,
     });
 
+    const scoreValues = resolveShotScoreValues({
+      requestedScore: normalizedBody.score,
+      computedScores,
+      scoringMode,
+    });
+
     const sanitizedShotPayload = { ...shotData };
     delete sanitizedShotPayload.score;
     delete sanitizedShotPayload.ringScore;
@@ -270,13 +319,10 @@ export const addShot = async (req, res) => {
 
     const shot = new Shot({
       ...sanitizedShotPayload,
-      score:
-        scoringMode === "decimal"
-          ? computedScores.decimalScore
-          : computedScores.ringScore,
-      ringScore: computedScores.ringScore,
-      decimalScore: computedScores.decimalScore,
-      isInnerTen: computedScores.isInnerTen,
+      score: scoreValues.score,
+      ringScore: scoreValues.ringScore,
+      decimalScore: scoreValues.decimalScore,
+      isInnerTen: scoreValues.isInnerTen,
       targetNumber: effectiveTargetNumber,
       sessionId,
       userId,
@@ -386,9 +432,6 @@ export const updateShot = async (req, res) => {
 
     const normalizedBody = normalizeTargetMetadata(req.body);
 
-    if (normalizedBody.score !== undefined) {
-      shot.score = normalizedBody.score;
-    }
     if (normalizedBody.positionX !== undefined) {
       shot.positionX = normalizedBody.positionX;
     }
@@ -453,7 +496,28 @@ export const updateShot = async (req, res) => {
 
     const session = await Session.findById(shot.sessionId);
     const scoringMode = resolveScoringMode(session);
-    assignComputedScoresToShot({ shot, scoringMode });
+    const computedScores = computeShotScore({
+      x:
+        typeof shot.positionX === "number"
+          ? shot.positionX
+          : Number(shot.positionX) || 0,
+      y:
+        typeof shot.positionY === "number"
+          ? shot.positionY
+          : Number(shot.positionY) || 0,
+      config: PISTOL_10M_CONFIG,
+      mode: scoringMode,
+    });
+    const scoreValues = resolveShotScoreValues({
+      requestedScore: normalizedBody.score,
+      computedScores,
+      scoringMode,
+    });
+
+    shot.score = scoreValues.score;
+    shot.ringScore = scoreValues.ringScore;
+    shot.decimalScore = scoreValues.decimalScore;
+    shot.isInnerTen = scoreValues.isInnerTen;
 
     await shot.save();
 
