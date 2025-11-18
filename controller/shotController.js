@@ -5,6 +5,39 @@ import Target from "../model/target.js";
 import { recalculateSessionStats } from "../util/sessionStats.js";
 import { normalizeTargetMetadata } from "../util/shotMetadata.js";
 import { resequenceTargetsForSession } from "../util/targetSequence.js";
+import { computeShotScore, normalizeScoringMode } from "../util/scoring.js";
+import { PISTOL_10M_CONFIG } from "../util/scoringConfig.js";
+
+const DEFAULT_SCORING_MODE = "decimal";
+
+const resolveScoringMode = (session) => {
+  const desiredMode = session?.scoringMode ?? DEFAULT_SCORING_MODE;
+  return normalizeScoringMode(desiredMode);
+};
+
+const assignComputedScoresToShot = ({ shot, scoringMode }) => {
+  if (!shot) {
+    return;
+  }
+
+  const { ringScore, decimalScore, isInnerTen } = computeShotScore({
+    x:
+      typeof shot.positionX === "number"
+        ? shot.positionX
+        : Number(shot.positionX) || 0,
+    y:
+      typeof shot.positionY === "number"
+        ? shot.positionY
+        : Number(shot.positionY) || 0,
+    config: PISTOL_10M_CONFIG,
+    mode: scoringMode,
+  });
+
+  shot.ringScore = ringScore;
+  shot.decimalScore = decimalScore;
+  shot.isInnerTen = isInnerTen;
+  shot.score = scoringMode === "decimal" ? decimalScore : ringScore;
+};
 
 const sanitizeShotResponse = (shotDoc) => {
   if (!shotDoc) {
@@ -216,14 +249,40 @@ export const addShot = async (req, res) => {
     const effectiveTargetNumber =
       typeof target.targetNumber === "number" ? target.targetNumber : targetNumber;
 
+    const normalizedPositionX =
+      typeof positionX === "number" ? positionX : Number(positionX) || 0;
+    const normalizedPositionY =
+      typeof positionY === "number" ? positionY : Number(positionY) || 0;
+
+    const scoringMode = resolveScoringMode(session);
+    const computedScores = computeShotScore({
+      x: normalizedPositionX,
+      y: normalizedPositionY,
+      config: PISTOL_10M_CONFIG,
+      mode: scoringMode,
+    });
+
+    const sanitizedShotPayload = { ...shotData };
+    delete sanitizedShotPayload.score;
+    delete sanitizedShotPayload.ringScore;
+    delete sanitizedShotPayload.decimalScore;
+    delete sanitizedShotPayload.isInnerTen;
+
     const shot = new Shot({
-      ...shotData,
+      ...sanitizedShotPayload,
+      score:
+        scoringMode === "decimal"
+          ? computedScores.decimalScore
+          : computedScores.ringScore,
+      ringScore: computedScores.ringScore,
+      decimalScore: computedScores.decimalScore,
+      isInnerTen: computedScores.isInnerTen,
       targetNumber: effectiveTargetNumber,
       sessionId,
       userId,
       targetId: target._id,
-      positionX: positionX ?? 0,
-      positionY: positionY ?? 0,
+      positionX: normalizedPositionX,
+      positionY: normalizedPositionY,
       ...(timestamp !== undefined ? { timestamp } : {}),
     });
 
@@ -391,6 +450,10 @@ export const updateShot = async (req, res) => {
         shot.targetNumber = nextTargetNumber;
       }
     }
+
+    const session = await Session.findById(shot.sessionId);
+    const scoringMode = resolveScoringMode(session);
+    assignComputedScoresToShot({ shot, scoringMode });
 
     await shot.save();
 
