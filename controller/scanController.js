@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import path from 'path';
 import { spawn } from 'child_process';
+import fs from 'fs/promises';
 import Session from '../model/session.js';
 import Shot from '../model/shot.js';
 import Target from '../model/target.js';
@@ -16,6 +17,20 @@ const fakeDetectShotsFromImage = (imagePath) => {
     { score: 9.4, positionX: -0.1, positionY: 0.08 },
     { score: 8.6, positionX: 0.3, positionY: 0.2 },
   ];
+};
+
+const safeDeleteFile = async (filePath) => {
+  if (!filePath) {
+    return;
+  }
+
+  try {
+    await fs.unlink(filePath);
+  } catch (err) {
+    if (err?.code !== 'ENOENT') {
+      console.warn('Failed to delete uploaded file:', err.message);
+    }
+  }
 };
 
 const runOpenCvDetector = (imagePath) => {
@@ -84,6 +99,7 @@ const findNextTargetNumber = async ({ sessionId, userId }) => {
 };
 
 export const scanTargetAndCreateShots = async (req, res) => {
+  let imagePath;
   try {
     const { userId, sessionId } = req.params;
 
@@ -107,7 +123,7 @@ export const scanTargetAndCreateShots = async (req, res) => {
         .json({ error: 'You are not allowed to modify this session' });
     }
 
-    const imagePath = req.file.path;
+    imagePath = req.file.path;
     console.log('Image uploaded for scanning:', imagePath);
 
     // 3) Detect shots: try OpenCV script, fallback to fake stub
@@ -176,5 +192,7 @@ export const scanTargetAndCreateShots = async (req, res) => {
   } catch (error) {
     console.error('Error scanning target image', error);
     res.status(500).json({ error: 'Failed to process scanned target image' });
+  } finally {
+    await safeDeleteFile(imagePath);
   }
 };
