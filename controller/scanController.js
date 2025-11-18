@@ -24,8 +24,19 @@ const safeDeleteFile = async (filePath) => {
     return;
   }
 
+  // Previously we always deleted the uploaded image immediately after processing.
+  // For now we keep the file so the Data & Privacy flow can delete images on demand.
+  // If you want the old behaviour back, set DELETE_SCAN_IMAGES_IMMEDIATELY=true.
+  const shouldDelete = process.env.DELETE_SCAN_IMAGES_IMMEDIATELY === 'true';
+
+  if (!shouldDelete) {
+    console.log('[scanTarget] Keeping uploaded image at', filePath);
+    return;
+  }
+
   try {
     await fs.unlink(filePath);
+    console.log('[scanTarget] Deleted temp image', filePath);
   } catch (err) {
     if (err?.code !== 'ENOENT') {
       console.warn('Failed to delete uploaded file:', err.message);
