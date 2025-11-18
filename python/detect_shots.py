@@ -60,15 +60,20 @@ def save_debug_image(
         debug_dir.mkdir(parents=True, exist_ok=True)
 
         out_path = debug_dir / f"{img_path.stem}_debug.jpg"
+
+        # Downscale very large debug overlays so they are lighter to store
+        max_dim = 1200
+        h_dbg, w_dbg = debug.shape[:2]
+        if max(h_dbg, w_dbg) > max_dim:
+            scale = max_dim / max(h_dbg, w_dbg)
+            new_size = (int(w_dbg * scale), int(h_dbg * scale))
+            debug = cv2.resize(debug, new_size, interpolation=cv2.INTER_AREA)
+
+        # Save with a balanced JPEG quality to keep files readable but compact
         cv2.imwrite(
             str(out_path),
             debug,
-            [
-                int(cv2.IMWRITE_JPEG_QUALITY),
-                60,
-                int(cv2.IMWRITE_JPEG_OPTIMIZE),
-                1,
-            ],
+            [int(cv2.IMWRITE_JPEG_QUALITY), 80],
         )
 
         log(f"Saved debug image to {out_path}")
