@@ -7,6 +7,14 @@ const targetSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    scanImagePath: {
+      type: String,
+      default: null,
+    },
+    debugImagePath: {
+      type: String,
+      default: null,
+    },
     sessionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Session',

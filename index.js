@@ -41,10 +41,20 @@ if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir);
 }
 
-// Ensure upload directory for scanned targets exists
-const uploadsDir = path.join(__dirname, "uploads", "targets");
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+// Ensure upload directories exist
+const uploadsBaseDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsBaseDir)) {
+  fs.mkdirSync(uploadsBaseDir, { recursive: true });
+}
+
+const uploadsTargetsDir = path.join(uploadsBaseDir, "targets");
+if (!fs.existsSync(uploadsTargetsDir)) {
+  fs.mkdirSync(uploadsTargetsDir, { recursive: true });
+}
+
+const uploadsDebugDir = path.join(uploadsBaseDir, "debug");
+if (!fs.existsSync(uploadsDebugDir)) {
+  fs.mkdirSync(uploadsDebugDir, { recursive: true });
 }
 
 // Set up Winston logger
@@ -103,6 +113,9 @@ app.use(httpLogger);
 // Serve favicon.ico
 const publicDir = path.join(__dirname, "public");
 app.use(express.static(publicDir));
+
+// Serve uploaded target and debug images
+app.use("/pistol/uploads", express.static(uploadsBaseDir));
 
 // Health Check Endpoint
 app.get("/health", (req, res) => {

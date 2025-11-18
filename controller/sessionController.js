@@ -4,6 +4,7 @@ import Shot from '../model/shot.js';
 import Session from '../model/session.js';
 import Target from '../model/target.js';
 import { resequenceTargetsForSession } from '../util/targetSequence.js';
+import { buildPublicUploadUrl } from '../util/uploadPaths.js';
 
 // Add a new session
 export const addSession = async (req, res) => {
@@ -64,6 +65,13 @@ export const getSessionById = async (req, res) => {
 
     if (Array.isArray(sessionObject.targets)) {
       for (const target of sessionObject.targets) {
+        if (!target) {
+          continue;
+        }
+
+        target.scanImageUrl = buildPublicUploadUrl(target.scanImagePath);
+        target.debugImageUrl = buildPublicUploadUrl(target.debugImagePath);
+
         const targetShots = Array.isArray(target?.shots) ? target.shots : [];
 
         for (const shot of targetShots) {
