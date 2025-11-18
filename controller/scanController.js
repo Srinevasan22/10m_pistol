@@ -6,6 +6,12 @@ import Session from '../model/session.js';
 import Shot from '../model/shot.js';
 import Target from '../model/target.js';
 import { recalculateSessionStats } from '../util/sessionStats.js';
+import {
+  buildDebugImagePath,
+  buildPublicUploadUrl,
+  normalizeToUploadsPath,
+  toAbsoluteUploadsPath,
+} from '../util/uploadPaths.js';
 
 const fakeDetectShotsFromImage = (imagePath) => {
   if (!imagePath) {
@@ -101,6 +107,22 @@ const runOpenCvDetector = (imagePath) => {
   });
 };
 
+const fileExists = async (storedPath) => {
+  if (!storedPath) {
+    return false;
+  }
+
+  try {
+    await fs.access(toAbsoluteUploadsPath(storedPath));
+    return true;
+  } catch (err) {
+    if (err?.code !== 'ENOENT') {
+      console.warn('Error checking file existence for', storedPath, err.message);
+    }
+    return false;
+  }
+};
+
 const findNextTargetNumber = async ({ sessionId, userId }) => {
   const latestTarget = await Target.findOne({ sessionId, userId })
     .sort({ targetNumber: -1 })
@@ -138,6 +160,9 @@ export const scanTargetAndCreateShots = async (req, res) => {
 
     imagePath = req.file?.path;
     console.log('[scanTarget] Image uploaded for scanning:', imagePath);
+
+    const normalizedImagePath = normalizeToUploadsPath(imagePath);
+    const debugImagePath = buildDebugImagePath(normalizedImagePath);
 
     let detectedShots = [];
     let usedStub = false;
@@ -183,6 +208,9 @@ export const scanTargetAndCreateShots = async (req, res) => {
       userId: normalizedUserId,
       targetNumber: nextTargetNumber,
       shots: [],
+      scanImagePath: normalizedImagePath,
+      debugImagePath:
+        (await fileExists(debugImagePath)) && !usedStub ? debugImagePath : null,
     });
 
     if (!Array.isArray(session.targets)) {
@@ -216,11 +244,20 @@ export const scanTargetAndCreateShots = async (req, res) => {
       `[scanTarget] Saved ${createdShots.length} shots for session ${sessionId}`
     );
 
+    const targetObject = target.toObject({ versionKey: false });
+
+    const enhancedTarget = {
+      ...targetObject,
+      scanImageUrl: buildPublicUploadUrl(targetObject.scanImagePath),
+      debugImageUrl: buildPublicUploadUrl(targetObject.debugImagePath),
+    };
+
     res.status(201).json({
       message: usedStub
         ? 'Shots detected and saved from scanned target (stub)'
         : 'Shots detected and saved from scanned target',
       shots: createdShots,
+      target: enhancedTarget,
     });
   } catch (error) {
     console.error('Error scanning target image', error);
