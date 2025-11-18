@@ -3,6 +3,7 @@ import { PISTOL_10M_CONFIG } from "./scoringConfig.js";
 export const DECIMAL_SCORING_MODE = "decimal";
 const DECIMAL_PRECISION = 10;
 export const MAX_DECIMAL_SCORE = 10.9;
+const RING_BOUNDARY_TOLERANCE = 0.001; // millimetres
 
 const clamp = (value, min, max) => {
   if (Number.isNaN(value)) {
@@ -50,7 +51,7 @@ export const computeShotScore = ({
       return false;
     }
 
-    return distance <= ring.outerRadius;
+    return distance <= ring.outerRadius + RING_BOUNDARY_TOLERANCE;
   });
 
   if (!matchedRing) {
