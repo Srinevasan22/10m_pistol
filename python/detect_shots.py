@@ -166,6 +166,33 @@ def detect_shots(image_path: str):
     min_area = (target_r ** 2) * 0.0005
     max_area = (target_r ** 2) * 0.02
 
+    # ISSF 10m air pistol target dimensions (diameters in millimetres).
+    # Values pulled from the official target spec (10-ring = 11.5 mm,
+    # every other ring adds 16 mm).  We convert them to radii and
+    # normalize relative to the 1-ring radius so we can compare the
+    # ratios produced from our detected target size.
+    official_ring_diameters_mm = {
+        10: 11.5,
+        9: 27.5,
+        8: 43.5,
+        7: 59.5,
+        6: 75.5,
+        5: 91.5,
+        4: 107.5,
+        3: 123.5,
+        2: 139.5,
+        1: 155.5,
+    }
+    outer_radius_mm = official_ring_diameters_mm[1] / 2.0
+    ring_ratio_thresholds = sorted(
+        (
+            (score_val, (diameter / 2.0) / outer_radius_mm)
+            for score_val, diameter in official_ring_diameters_mm.items()
+        ),
+        key=lambda item: item[0],
+        reverse=True,
+    )
+
     for cnt in contours:
         area = cv2.contourArea(cnt)
         if area < min_area or area > max_area:
@@ -185,18 +212,17 @@ def detect_shots(image_path: str):
         norm_x = (x - cx) / target_r
         norm_y = (y - cy) / target_r
 
-        # --- 5. Scoring based on distance ratio ---
+        # --- 5. Scoring based on official ring thresholds ---
         ratio = dist_center / target_r
 
-        if ratio <= 1.0:
-            # Inside target: linear mapping center=10, edge=1
-            ratio_clamped = max(0.0, min(1.0, ratio))
-            score = 10.0 - 9.0 * ratio_clamped
-        else:
-            # Outside official scoring rings → score 0
+        if ratio > 1.0:
             score = 0.0
-
-        score = round(float(score), 1)
+        else:
+            score = 0.0
+            for ring_score, threshold in ring_ratio_thresholds:
+                if ratio <= threshold:
+                    score = float(ring_score)
+                    break
 
         shots.append(
             {

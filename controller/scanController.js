@@ -6,6 +6,8 @@ import Session from '../model/session.js';
 import Shot from '../model/shot.js';
 import Target from '../model/target.js';
 import { recalculateSessionStats } from '../util/sessionStats.js';
+import { computeShotScore, normalizeScoringMode } from '../util/scoring.js';
+import { PISTOL_10M_CONFIG } from '../util/scoringConfig.js';
 import {
   buildDebugImagePath,
   buildPublicUploadUrl,
@@ -177,6 +179,8 @@ export const scanTargetAndCreateShots = async (req, res) => {
     imagePath = req.file?.path;
     console.log('[scanTarget] Image uploaded for scanning:', imagePath);
 
+    const scoringMode = normalizeScoringMode(session?.scoringMode);
+
     const normalizedImagePath = normalizeToUploadsPath(imagePath);
     const debugImagePath = buildDebugImagePath(normalizedImagePath);
 
@@ -237,10 +241,32 @@ export const scanTargetAndCreateShots = async (req, res) => {
     const createdShots = [];
 
     for (const detectedShot of detectedShots) {
+      const normalizedPositionX =
+        typeof detectedShot.positionX === 'number'
+          ? detectedShot.positionX
+          : Number(detectedShot.positionX) || 0;
+      const normalizedPositionY =
+        typeof detectedShot.positionY === 'number'
+          ? detectedShot.positionY
+          : Number(detectedShot.positionY) || 0;
+
+      const computedScores = computeShotScore({
+        x: normalizedPositionX,
+        y: normalizedPositionY,
+        config: PISTOL_10M_CONFIG,
+        mode: scoringMode,
+      });
+
       const shot = new Shot({
-        score: detectedShot.score,
-        positionX: detectedShot.positionX ?? 0,
-        positionY: detectedShot.positionY ?? 0,
+        score:
+          scoringMode === 'decimal'
+            ? computedScores.decimalScore
+            : computedScores.ringScore,
+        ringScore: computedScores.ringScore,
+        decimalScore: computedScores.decimalScore,
+        isInnerTen: computedScores.isInnerTen,
+        positionX: normalizedPositionX,
+        positionY: normalizedPositionY,
         timestamp: new Date(),
         sessionId: normalizedSessionId,
         userId: normalizedUserId,

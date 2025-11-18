@@ -5,6 +5,20 @@ const shotSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
+  ringScore: {
+    type: Number,
+    min: 0,
+    max: 10,
+  },
+  decimalScore: {
+    type: Number,
+    min: 0,
+    max: 10.9,
+  },
+  isInnerTen: {
+    type: Boolean,
+    default: false,
+  },
   positionX: {
     type: Number,
     default: 0,
