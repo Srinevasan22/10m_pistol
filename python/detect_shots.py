@@ -10,6 +10,64 @@ def log(*args):
     print(*args, file=sys.stderr)
 
 
+def save_debug_image(
+    img,
+    cx: float,
+    cy: float,
+    target_r: float,
+    contours,
+    shots,
+    image_path: str,
+):
+    """
+    Create a debug image showing:
+    - main target circle (green)
+    - all candidate contours (blue)
+    - accepted shot centers (red dots)
+    Saved into uploads/debug as <original_name>_debug.jpg
+    """
+    try:
+        debug = img.copy()
+
+        # 1) Draw detected / fallback target circle (green)
+        cv2.circle(
+            debug,
+            (int(cx), int(cy)),
+            int(target_r),
+            (0, 255, 0),  # BGR: green
+            2,
+        )
+
+        # 2) Draw all contours used for detection (blue)
+        cv2.drawContours(debug, contours, -1, (255, 0, 0), 1)  # blue
+
+        # 3) Draw accepted shots (red), using normalized coordinates
+        for s in shots:
+            # convert from normalized [-1,1] back to pixel coordinates
+            x_px = int(cx + s["positionX"] * target_r)
+            y_px = int(cy + s["positionY"] * target_r)
+            cv2.circle(
+                debug,
+                (x_px, y_px),
+                6,
+                (0, 0, 255),  # red
+                -1,
+            )
+
+        # 4) Build output path: uploads/debug/<original_stem>_debug.jpg
+        img_path = Path(image_path)
+        debug_dir = img_path.parent.parent / "debug"  # if img in uploads/targets
+        debug_dir.mkdir(parents=True, exist_ok=True)
+
+        out_path = debug_dir / f"{img_path.stem}_debug.jpg"
+        cv2.imwrite(str(out_path))
+
+        log(f"Saved debug image to {out_path}")
+
+    except Exception as e:
+        log("Failed to save debug image:", e)
+
+
 def detect_shots(image_path: str):
     """
     v1 detector:
@@ -107,6 +165,17 @@ def detect_shots(image_path: str):
 
     # Optional: sort shots by distance from center (inner first)
     shots.sort(key=lambda s: abs(s["score"] - 10.0))
+
+    # --- 8. Save debug image showing what we detected ---
+    save_debug_image(
+        img=img,
+        cx=cx,
+        cy=cy,
+        target_r=target_r,
+        contours=contours,
+        shots=shots,
+        image_path=image_path,
+    )
 
     return shots
 
