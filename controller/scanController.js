@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import path from 'path';
+import { spawn } from 'child_process';
 import Session from '../model/session.js';
 import Shot from '../model/shot.js';
 import Target from '../model/target.js';
@@ -14,6 +16,59 @@ const fakeDetectShotsFromImage = (imagePath) => {
     { score: 9.4, positionX: -0.1, positionY: 0.08 },
     { score: 8.6, positionX: 0.3, positionY: 0.2 },
   ];
+};
+
+const runOpenCvDetector = (imagePath) => {
+  return new Promise((resolve) => {
+    try {
+      const scriptPath = path.join(process.cwd(), 'python', 'detect_shots.py');
+
+      const py = spawn('python3', [scriptPath, imagePath]);
+
+      let stdout = '';
+      let stderr = '';
+
+      py.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      py.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      py.on('close', () => {
+        if (stderr.trim()) {
+          console.warn('[OpenCV detector stderr]:', stderr.trim());
+        }
+
+        if (!stdout.trim()) {
+          return resolve([]);
+        }
+
+        try {
+          const parsed = JSON.parse(stdout);
+          if (Array.isArray(parsed)) {
+            return resolve(parsed);
+          }
+          if (Array.isArray(parsed.shots)) {
+            return resolve(parsed.shots);
+          }
+          return resolve([]);
+        } catch (err) {
+          console.error('Failed to parse OpenCV detector JSON:', err.message);
+          return resolve([]);
+        }
+      });
+
+      py.on('error', (err) => {
+        console.error('Failed to start python3 detector:', err.message);
+        return resolve([]);
+      });
+    } catch (err) {
+      console.error('runOpenCvDetector error:', err.message);
+      resolve([]);
+    }
+  });
 };
 
 const findNextTargetNumber = async ({ sessionId, userId }) => {
@@ -53,7 +108,17 @@ export const scanTargetAndCreateShots = async (req, res) => {
     }
 
     const imagePath = req.file.path;
-    const detectedShots = fakeDetectShotsFromImage(imagePath);
+    console.log('Image uploaded for scanning:', imagePath);
+
+    // 3) Detect shots: try OpenCV script, fallback to fake stub
+    let detectedShots = await runOpenCvDetector(imagePath);
+
+    if (!detectedShots || !detectedShots.length) {
+      console.warn(
+        'OpenCV detection returned no shots, falling back to fake stub'
+      );
+      detectedShots = fakeDetectShotsFromImage(imagePath);
+    }
 
     if (!Array.isArray(detectedShots) || detectedShots.length === 0) {
       return res.status(200).json({
