@@ -1,8 +1,8 @@
 import { PISTOL_10M_CONFIG } from "./scoringConfig.js";
 
-const DECIMAL_SCORING_MODE = "decimal";
+export const DECIMAL_SCORING_MODE = "decimal";
 const DECIMAL_PRECISION = 10;
-const MAX_DECIMAL_SCORE = 10.9;
+export const MAX_DECIMAL_SCORE = 10.9;
 
 const clamp = (value, min, max) => {
   if (Number.isNaN(value)) {
@@ -11,11 +11,11 @@ const clamp = (value, min, max) => {
   return Math.min(Math.max(value, min), max);
 };
 
-const roundToSingleDecimal = (value) =>
+export const roundToSingleDecimal = (value) =>
   Math.round(value * DECIMAL_PRECISION) / DECIMAL_PRECISION;
 
 export const normalizeScoringMode = (mode) =>
-  mode === "classic" ? "classic" : DECIMAL_SCORING_MODE;
+  mode === DECIMAL_SCORING_MODE ? DECIMAL_SCORING_MODE : "classic";
 
 export const computeShotScore = ({
   x = 0,

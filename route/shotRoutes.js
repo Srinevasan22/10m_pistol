@@ -42,19 +42,6 @@ const validateObjectId = (paramName) => {
   };
 };
 
-// Middleware to add default values for positionX, positionY, and timestamp if not provided
-router.use((req, res, next) => {
-  if (
-    (req.method === "POST" || req.method === "PUT") &&
-    req.body.score !== undefined
-  ) {
-    req.body.positionX = req.body.positionX ?? 0;
-    req.body.positionY = req.body.positionY ?? 0;
-    req.body.timestamp = req.body.timestamp ?? new Date().toISOString();
-  }
-  next();
-});
-
 // Route to add a new shot to a specific session for a specific user
 // @route POST /users/:userId/sessions/:sessionId/shots
 router.post(
@@ -67,9 +54,9 @@ router.post(
       .isNumeric()
       .not()
       .isEmpty(),
-    check("score", "Score must be between 0 and 10").isFloat({
+    check("score", "Score must be between 0 and 10.9").isFloat({
       min: 0,
-      max: 10,
+      max: 10.9,
     }),
     check("targetIndex", "targetIndex must be a non-negative integer")
       .optional({ nullable: true })
@@ -143,9 +130,9 @@ router.put(
     validateObjectId("shotId"),
     // Validate the score field if it's present
     check("score", "Score must be a number").optional().isNumeric(),
-    check("score", "Score must be between 0 and 10")
+    check("score", "Score must be between 0 and 10.9")
       .optional()
-      .isFloat({ min: 0, max: 10 }),
+      .isFloat({ min: 0, max: 10.9 }),
     check("targetIndex", "targetIndex must be a non-negative integer")
       .optional({ nullable: true })
       .isInt({ min: 0 }),
