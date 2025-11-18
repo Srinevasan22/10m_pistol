@@ -10,4 +10,9 @@ describe("computeShotScore", () => {
     const result = computeShotScore({ x: 30, y: 0, mode: "classic" });
     expect(result.ringScore).toBe(6);
   });
+
+  it("treats shots touching a ring line as scoring inside that ring", () => {
+    const result = computeShotScore({ x: 21.75, y: 0, mode: "classic" });
+    expect(result.ringScore).toBe(8);
+  });
 });
