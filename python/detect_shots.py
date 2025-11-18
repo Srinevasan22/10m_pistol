@@ -70,12 +70,12 @@ def save_debug_image(
 
 def detect_shots(image_path: str):
     """
-    v1 detector:
+    v1.1 detector tuned for white patches on a 10m pistol target image:
     - load image
-    - find main circular target
-    - within that circle, find dark-ish blobs as "shots"
-    - return list of {score, positionX, positionY}
-      where positionX/Y are normalized [-1, 1] with (0,0) at target center.
+    - detect main circular target (outer scoring ring)
+    - detect bright circular spots (white shots)
+    - return list of {score, positionX, positionY},
+      with normalized coords in [-1, 1] relative to target center.
     """
     # --- 1. Load image ---
     img = cv2.imread(image_path)
@@ -85,10 +85,21 @@ def detect_shots(image_path: str):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     h, w = gray.shape[:2]
 
-    # --- 2. Blur slightly to reduce noise ---
+    # Optional: downscale very large images to speed up processing
+    max_dim = max(h, w)
+    if max_dim > 1600:
+        scale = 1600.0 / max_dim
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        img = cv2.resize(img, (new_w, new_h))
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        h, w = gray.shape[:2]
+
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
 
-    # --- 3. Try to detect the main circular target using HoughCircles ---
+    # --- 2. Detect main circular target (outer ring) ---
+    # We choose the circle whose center is closest to image center,
+    # with a plausible radius range.
     circles = cv2.HoughCircles(
         blur,
         cv2.HOUGH_GRADIENT,
@@ -96,40 +107,50 @@ def detect_shots(image_path: str):
         minDist=min(h, w) / 4,
         param1=100,
         param2=30,
-        minRadius=int(min(h, w) * 0.2),
-        maxRadius=int(min(h, w) * 0.49),
+        minRadius=int(min(h, w) * 0.15),
+        maxRadius=int(min(h, w) * 0.35),
     )
 
     if circles is None:
-        # Fallback: use image center and a radius based on image size
+        # Fallback: use image center and radius based on size
         log("No circle found, using fallback center/radius")
         cx, cy = w / 2.0, h / 2.0
-        target_r = min(h, w) * 0.4
+        target_r = min(h, w) * 0.35
     else:
         circles = np.round(circles[0, :]).astype("int")
-        # take the largest detected circle
-        c = max(circles, key=lambda c: c[2])
-        cx, cy, target_r = float(c[0]), float(c[1]), float(c[2])
+        img_cx, img_cy = w / 2.0, h / 2.0
+        # choose the circle whose center is closest to the image center
+        chosen = min(
+            circles,
+            key=lambda c: (c[0] - img_cx) ** 2 + (c[1] - img_cy) ** 2,
+        )
+        cx, cy, target_r = float(chosen[0]), float(chosen[1]), float(chosen[2])
         log(f"Detected circle center=({cx:.1f},{cy:.1f}), r={target_r:.1f}")
 
-    # --- 4. Threshold to highlight darker areas (rings + holes) ---
-    # For pistol targets, the center is black, holes slightly lighter – we do a simple inverse binary
-    _, th = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    # --- 3. Detect bright spots (white shots) ---
+    # Strategy: try high thresholds; we want only the brightest highlights
+    # (the white patches), not the whole beige card.
+    contours = []
+    for thr in [250, 245, 240]:
+        _, bright = cv2.threshold(blur, thr, 255, cv2.THRESH_BINARY)
+        cnts, _ = cv2.findContours(
+            bright, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        # If we get "enough" blobs, stop lowering the threshold.
+        if len(cnts) >= 3:
+            contours = cnts
+            break
 
-    # Create a mask for the target circle
-    mask = np.zeros_like(th)
-    cv2.circle(mask, (int(cx), int(cy)), int(target_r), 255, thickness=-1)
-
-    # Restrict thresholded image to inside the target
-    target_only = cv2.bitwise_and(th, th, mask=mask)
-
-    # --- 5. Find contours → potential shots ---
-    contours, _ = cv2.findContours(target_only, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        log("No bright blobs found for shots")
+        contours = []
 
     shots = []
-    # These size thresholds are heuristic and will need tuning with real photos
-    min_area = (target_r ** 2) * 0.0002  # too small = noise
-    max_area = (target_r ** 2) * 0.02    # too big = ring segments
+
+    # Area thresholds relative to target size:
+    # for your sample image, shots are ~1600 px area.
+    min_area = (target_r ** 2) * 0.0005
+    max_area = (target_r ** 2) * 0.02
 
     for cnt in contours:
         area = cv2.contourArea(cnt)
@@ -137,36 +158,44 @@ def detect_shots(image_path: str):
             continue
 
         (x, y), radius = cv2.minEnclosingCircle(cnt)
-        # Ensure this is reasonably inside the target
+
+        # distance from target center
         dist_center = np.hypot(x - cx, y - cy)
-        if dist_center > target_r * 1.05:
+
+        # Only ignore absolutely crazy far blobs
+        if dist_center > target_r * 1.5:
             continue
 
-        # --- 6. Normalize coordinates to [-1, 1] ---
+        # --- 4. Normalize coordinates to [-1, 1] ---
         # x: left (-1) to right (+1), y: top (-1) to bottom (+1)
         norm_x = (x - cx) / target_r
         norm_y = (y - cy) / target_r
 
-        # --- 7. Rough scoring based on distance ratio ---
-        # ratio 0 = center, 1 = edge -> map to score 10..1
+        # --- 5. Scoring based on distance ratio ---
         ratio = dist_center / target_r
-        ratio = max(0.0, min(1.0, ratio))
 
-        # simple linear mapping: center=10, edge=1
-        score = 10.0 - 9.0 * ratio
-        # round to one decimal for now
-        score = round(score, 1)
+        if ratio <= 1.0:
+            # Inside target: linear mapping center=10, edge=1
+            ratio_clamped = max(0.0, min(1.0, ratio))
+            score = 10.0 - 9.0 * ratio_clamped
+        else:
+            # Outside official scoring rings → score 0
+            score = 0.0
 
-        shots.append({
-            "score": score,
-            "positionX": float(norm_x),
-            "positionY": float(norm_y),
-        })
+        score = round(float(score), 1)
 
-    # Optional: sort shots by distance from center (inner first)
+        shots.append(
+            {
+                "score": float(score),
+                "positionX": float(norm_x),
+                "positionY": float(norm_y),
+            }
+        )
+
+    # sort inner to outer
     shots.sort(key=lambda s: abs(s["score"] - 10.0))
 
-    # --- 8. Save debug image showing what we detected ---
+    # --- 6. Save debug image with circles, contours, and shot dots ---
     save_debug_image(
         img=img,
         cx=cx,
