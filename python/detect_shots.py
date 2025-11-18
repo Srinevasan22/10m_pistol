@@ -6,8 +6,133 @@ import numpy as np
 from pathlib import Path
 
 
+# --- Target geometry helpers -------------------------------------------------
+
+OFFICIAL_RING_DIAMETERS_MM = {
+    10: 11.5,
+    9: 27.5,
+    8: 43.5,
+    7: 59.5,
+    6: 75.5,
+    5: 91.5,
+    4: 107.5,
+    3: 123.5,
+    2: 139.5,
+    1: 155.5,
+}
+
+
+def build_ring_ratio_thresholds():
+    outer_radius_mm = OFFICIAL_RING_DIAMETERS_MM[1] / 2.0
+    return sorted(
+        (
+            (score_val, (diameter / 2.0) / outer_radius_mm)
+            for score_val, diameter in OFFICIAL_RING_DIAMETERS_MM.items()
+        ),
+        key=lambda item: item[0],
+        reverse=True,
+    )
+
+
+RING_RATIO_THRESHOLDS = build_ring_ratio_thresholds()
+
+
 def log(*args):
     print(*args, file=sys.stderr)
+
+
+def detect_target_circle(gray):
+    """Detect the main target circle using Hough transform."""
+    blur = cv2.GaussianBlur(gray, (9, 9), 0)
+    circles = cv2.HoughCircles(
+        blur,
+        cv2.HOUGH_GRADIENT,
+        dp=1.5,
+        minDist=gray.shape[0] // 2,
+        param1=80,
+        param2=40,
+        minRadius=gray.shape[0] // 4,
+        maxRadius=0,
+    )
+    if circles is None:
+        return None
+
+    circles = np.uint16(np.around(circles))
+    x, y, r = circles[0][0]
+    return float(x), float(y), float(r)
+
+
+def split_inner_outer(roi):
+    """Return binary masks for inner (black) and outer (beige) regions."""
+    _, thresh = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    inner_mask = (roi < thresh).astype(np.uint8)
+    outer_mask = (roi >= thresh).astype(np.uint8)
+    return inner_mask, outer_mask
+
+
+def detect_holes_in_mask(
+    roi,
+    mask,
+    hole_is_dark=True,
+    pellet_radius_px=10,
+):
+    """Detect hole centers within a masked region of interest."""
+
+    sub = roi.copy()
+    sub[mask == 0] = 255 if hole_is_dark else 0
+
+    if not hole_is_dark:
+        sub = 255 - sub
+
+    sub_blur = cv2.GaussianBlur(sub, (5, 5), 0)
+    th = cv2.adaptiveThreshold(
+        sub_blur,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        11,
+        2,
+    )
+
+    kernel = np.ones((3, 3), np.uint8)
+    th = cv2.morphologyEx(th, cv2.MORPH_OPEN, kernel, iterations=1)
+    th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+    cnts, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(th)
+
+    holes = []
+    one_hole_area = np.pi * (pellet_radius_px ** 2)
+
+    for i in range(1, num_labels):
+        area = stats[i, cv2.CC_STAT_AREA]
+        if area < 0.3 * one_hole_area:
+            continue
+
+        x_c, y_c = centroids[i]
+        n_est = max(1, int(round(area / one_hole_area)))
+
+        for _ in range(n_est):
+            holes.append((x_c, y_c))
+
+    return holes, cnts
+
+
+def compute_scores_from_normalized(dx, dy):
+    dist_ratio = np.hypot(dx, dy)
+    if dist_ratio > 1.0:
+        return 0.0, 0.0, False
+
+    ring_score = 0.0
+    for score_val, threshold in RING_RATIO_THRESHOLDS:
+        if dist_ratio <= threshold:
+            ring_score = float(score_val)
+            break
+
+    decimal_score = ring_score  # placeholder for more precise scoring later
+    is_inner_ten = dist_ratio <= RING_RATIO_THRESHOLDS[0][1]
+    return ring_score, decimal_score, is_inner_ten
 
 
 def save_debug_image(
@@ -82,12 +207,63 @@ def save_debug_image(
         log("Failed to save debug image:", e)
 
 
+def detect_shots_two_pass(gray, cx, cy, target_r):
+    x0 = max(int(cx - target_r), 0)
+    y0 = max(int(cy - target_r), 0)
+    x1 = min(int(cx + target_r), gray.shape[1])
+    y1 = min(int(cy + target_r), gray.shape[0])
+
+    roi = gray[y0:y1, x0:x1]
+    if roi.size == 0:
+        return [], []
+
+    inner_mask, outer_mask = split_inner_outer(roi)
+    pellet_radius_px = max(3, int(target_r * 0.03))
+
+    holes_outer, cnts_outer = detect_holes_in_mask(
+        roi, outer_mask, hole_is_dark=True, pellet_radius_px=pellet_radius_px
+    )
+    holes_inner, cnts_inner = detect_holes_in_mask(
+        roi, inner_mask, hole_is_dark=False, pellet_radius_px=pellet_radius_px
+    )
+
+    all_holes = holes_outer + holes_inner
+    contours = []
+    for cnt in cnts_outer + cnts_inner:
+        if cnt.size == 0:
+            continue
+        contours.append(cnt + np.array([[[x0, y0]]]))
+
+    shots = []
+    for (x, y) in all_holes:
+        x_global = x + x0
+        y_global = y + y0
+        norm_x = (x_global - cx) / target_r
+        norm_y = (y_global - cy) / target_r
+        ring_score, decimal_score, is_inner_ten = compute_scores_from_normalized(
+            norm_x, norm_y
+        )
+        shots.append(
+            {
+                "score": decimal_score,
+                "ringScore": ring_score,
+                "decimalScore": decimal_score,
+                "positionX": float(norm_x),
+                "positionY": float(norm_y),
+                "scoreSource": "computed",
+                "isInnerTen": bool(is_inner_ten),
+            }
+        )
+
+    return shots, contours
+
+
 def detect_shots(image_path: str):
     """
-    v1.1 detector tuned for white patches on a 10m pistol target image:
+    v1.2 detector tuned for multi-pass hole detection on a 10m pistol target image:
     - load image
     - detect main circular target (outer scoring ring)
-    - detect bright circular spots (white shots)
+    - detect holes both on the beige outer rings and inside the black center
     - return list of {score, positionX, positionY},
       with normalized coords in [-1, 1] relative to target center.
     """
@@ -112,128 +288,97 @@ def detect_shots(image_path: str):
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
 
     # --- 2. Detect main circular target (outer ring) ---
-    # We choose the circle whose center is closest to image center,
-    # with a plausible radius range.
-    circles = cv2.HoughCircles(
-        blur,
-        cv2.HOUGH_GRADIENT,
-        dp=1.2,
-        minDist=min(h, w) / 4,
-        param1=100,
-        param2=30,
-        minRadius=int(min(h, w) * 0.15),
-        maxRadius=int(min(h, w) * 0.35),
-    )
-
-    if circles is None:
-        # Fallback: use image center and radius based on size
-        log("No circle found, using fallback center/radius")
-        cx, cy = w / 2.0, h / 2.0
-        target_r = min(h, w) * 0.35
-    else:
-        circles = np.round(circles[0, :]).astype("int")
-        img_cx, img_cy = w / 2.0, h / 2.0
-        # choose the circle whose center is closest to the image center
-        chosen = min(
-            circles,
-            key=lambda c: (c[0] - img_cx) ** 2 + (c[1] - img_cy) ** 2,
+    circle = detect_target_circle(gray)
+    if circle is None:
+        log("No circle found via helper, falling back to legacy search")
+        circles = cv2.HoughCircles(
+            blur,
+            cv2.HOUGH_GRADIENT,
+            dp=1.2,
+            minDist=min(h, w) / 4,
+            param1=100,
+            param2=30,
+            minRadius=int(min(h, w) * 0.15),
+            maxRadius=int(min(h, w) * 0.35),
         )
-        cx, cy, target_r = float(chosen[0]), float(chosen[1]), float(chosen[2])
+
+        if circles is None:
+            log("No circle found, using fallback center/radius")
+            cx, cy = w / 2.0, h / 2.0
+            target_r = min(h, w) * 0.35
+        else:
+            circles = np.round(circles[0, :]).astype("int")
+            img_cx, img_cy = w / 2.0, h / 2.0
+            chosen = min(
+                circles,
+                key=lambda c: (c[0] - img_cx) ** 2 + (c[1] - img_cy) ** 2,
+            )
+            cx, cy, target_r = (
+                float(chosen[0]),
+                float(chosen[1]),
+                float(chosen[2]),
+            )
+            log(
+                f"Detected circle center=({cx:.1f},{cy:.1f}) via fallback, r={target_r:.1f}"
+            )
+    else:
+        cx, cy, target_r = circle
         log(f"Detected circle center=({cx:.1f},{cy:.1f}), r={target_r:.1f}")
 
-    # --- 3. Detect bright spots (white shots) ---
-    # Strategy: try high thresholds; we want only the brightest highlights
-    # (the white patches), not the whole beige card.
-    contours = []
-    for thr in [250, 245, 240]:
-        _, bright = cv2.threshold(blur, thr, 255, cv2.THRESH_BINARY)
-        cnts, _ = cv2.findContours(
-            bright, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
-        # If we get "enough" blobs, stop lowering the threshold.
-        if len(cnts) >= 3:
-            contours = cnts
-            break
+    # --- 3. Two-pass shot detection (outer beige + inner black) ---
+    shots, contours = detect_shots_two_pass(gray, cx, cy, target_r)
 
-    if not contours:
-        log("No bright blobs found for shots")
+    if not shots:
+        log("Two-pass detector found no shots, falling back to bright-blob mode")
         contours = []
+        for thr in [250, 245, 240]:
+            _, bright = cv2.threshold(blur, thr, 255, cv2.THRESH_BINARY)
+            cnts, _ = cv2.findContours(
+                bright, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
+            if len(cnts) >= 3:
+                contours = cnts
+                break
 
-    shots = []
+        if not contours:
+            log("No bright blobs found for shots")
+            contours = []
 
-    # Area thresholds relative to target size:
-    # for your sample image, shots are ~1600 px area.
-    min_area = (target_r ** 2) * 0.0005
-    max_area = (target_r ** 2) * 0.02
+        shots = []
+        min_area = (target_r ** 2) * 0.0005
+        max_area = (target_r ** 2) * 0.02
 
-    # ISSF 10m air pistol target dimensions (diameters in millimetres).
-    # Values pulled from the official target spec (10-ring = 11.5 mm,
-    # every other ring adds 16 mm).  We convert them to radii and
-    # normalize relative to the 1-ring radius so we can compare the
-    # ratios produced from our detected target size.
-    official_ring_diameters_mm = {
-        10: 11.5,
-        9: 27.5,
-        8: 43.5,
-        7: 59.5,
-        6: 75.5,
-        5: 91.5,
-        4: 107.5,
-        3: 123.5,
-        2: 139.5,
-        1: 155.5,
-    }
-    outer_radius_mm = official_ring_diameters_mm[1] / 2.0
-    ring_ratio_thresholds = sorted(
-        (
-            (score_val, (diameter / 2.0) / outer_radius_mm)
-            for score_val, diameter in official_ring_diameters_mm.items()
-        ),
-        key=lambda item: item[0],
-        reverse=True,
-    )
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < min_area or area > max_area:
+                continue
 
-    for cnt in contours:
-        area = cv2.contourArea(cnt)
-        if area < min_area or area > max_area:
-            continue
+            (x, y), radius = cv2.minEnclosingCircle(cnt)
 
-        (x, y), radius = cv2.minEnclosingCircle(cnt)
+            dist_center = np.hypot(x - cx, y - cy)
+            if dist_center > target_r * 1.5:
+                continue
 
-        # distance from target center
-        dist_center = np.hypot(x - cx, y - cy)
+            norm_x = (x - cx) / target_r
+            norm_y = (y - cy) / target_r
+            ring_score, decimal_score, is_inner_ten = compute_scores_from_normalized(
+                norm_x, norm_y
+            )
 
-        # Only ignore absolutely crazy far blobs
-        if dist_center > target_r * 1.5:
-            continue
-
-        # --- 4. Normalize coordinates to [-1, 1] ---
-        # x: left (-1) to right (+1), y: top (-1) to bottom (+1)
-        norm_x = (x - cx) / target_r
-        norm_y = (y - cy) / target_r
-
-        # --- 5. Scoring based on official ring thresholds ---
-        ratio = dist_center / target_r
-
-        if ratio > 1.0:
-            score = 0.0
-        else:
-            score = 0.0
-            for ring_score, threshold in ring_ratio_thresholds:
-                if ratio <= threshold:
-                    score = float(ring_score)
-                    break
-
-        shots.append(
-            {
-                "score": float(score),
-                "positionX": float(norm_x),
-                "positionY": float(norm_y),
-            }
-        )
+            shots.append(
+                {
+                    "score": decimal_score,
+                    "ringScore": ring_score,
+                    "decimalScore": decimal_score,
+                    "positionX": float(norm_x),
+                    "positionY": float(norm_y),
+                    "scoreSource": "fallback",
+                    "isInnerTen": bool(is_inner_ten),
+                }
+            )
 
     # sort inner to outer
-    shots.sort(key=lambda s: abs(s["score"] - 10.0))
+    shots.sort(key=lambda s: abs(s.get("ringScore", 0.0) - 10.0))
 
     # --- 6. Save debug image with circles, contours, and shot dots ---
     save_debug_image(
