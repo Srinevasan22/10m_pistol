@@ -15,6 +15,11 @@ const shotSchema = new mongoose.Schema({
     min: 0,
     max: 10.9,
   },
+  scoreSource: {
+    type: String,
+    enum: ["manual", "computed"],
+    default: "manual",
+  },
   isInnerTen: {
     type: Boolean,
     default: false,

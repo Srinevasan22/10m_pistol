@@ -33,7 +33,7 @@ const sessionSchema = new mongoose.Schema({
     scoringMode: {
         type: String,
         enum: ['classic', 'decimal'],
-        default: 'decimal',
+        default: 'classic',
     },
     userId: {
         type: mongoose.Schema.Types.ObjectId,

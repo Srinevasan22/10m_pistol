@@ -5,10 +5,75 @@ import Target from "../model/target.js";
 import { recalculateSessionStats } from "../util/sessionStats.js";
 import { normalizeTargetMetadata } from "../util/shotMetadata.js";
 import { resequenceTargetsForSession } from "../util/targetSequence.js";
-import { computeShotScore, normalizeScoringMode } from "../util/scoring.js";
+import {
+  computeShotScore,
+  normalizeScoringMode,
+  roundToSingleDecimal,
+} from "../util/scoring.js";
 import { PISTOL_10M_CONFIG } from "../util/scoringConfig.js";
 
-const DEFAULT_SCORING_MODE = "decimal";
+const DEFAULT_SCORING_MODE = "classic";
+const MIN_INPUT_SCORE = 0;
+const MAX_INPUT_SCORE = 10.9;
+
+const clampScoreInput = (value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const numericValue = typeof value === "number" ? value : Number(value);
+
+  if (Number.isNaN(numericValue)) {
+    return null;
+  }
+
+  if (numericValue < MIN_INPUT_SCORE) {
+    return MIN_INPUT_SCORE;
+  }
+
+  if (numericValue > MAX_INPUT_SCORE) {
+    return MAX_INPUT_SCORE;
+  }
+
+  return numericValue;
+};
+
+const deriveRingScoreFromDecimal = (value) => {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return 0;
+  }
+
+  if (value <= 0) {
+    return 0;
+  }
+
+  const floored = Math.floor(value);
+
+  if (floored > 10) {
+    return 10;
+  }
+
+  return floored;
+};
+
+const buildManualScoreMetadata = (inputScore) => {
+  const clampedScore = clampScoreInput(inputScore);
+
+  if (clampedScore === null) {
+    return null;
+  }
+
+  const decimalScore = roundToSingleDecimal(clampedScore);
+  const ringScore = deriveRingScoreFromDecimal(decimalScore);
+
+  return {
+    score: decimalScore,
+    ringScore,
+    decimalScore,
+    isInnerTen: ringScore === 10 && decimalScore > 10,
+    scoreSource: "manual",
+  };
+};
 
 const resolveScoringMode = (session) => {
   const desiredMode = session?.scoringMode ?? DEFAULT_SCORING_MODE;
@@ -16,7 +81,7 @@ const resolveScoringMode = (session) => {
 };
 
 const assignComputedScoresToShot = ({ shot, scoringMode }) => {
-  if (!shot) {
+  if (!shot || shot.scoreSource === "manual") {
     return;
   }
 
@@ -37,6 +102,7 @@ const assignComputedScoresToShot = ({ shot, scoringMode }) => {
   shot.decimalScore = decimalScore;
   shot.isInnerTen = isInnerTen;
   shot.score = scoringMode === "decimal" ? decimalScore : ringScore;
+  shot.scoreSource = "computed";
 };
 
 const sanitizeShotResponse = (shotDoc) => {
@@ -249,40 +315,50 @@ export const addShot = async (req, res) => {
     const effectiveTargetNumber =
       typeof target.targetNumber === "number" ? target.targetNumber : targetNumber;
 
-    const normalizedPositionX =
-      typeof positionX === "number" ? positionX : Number(positionX) || 0;
-    const normalizedPositionY =
-      typeof positionY === "number" ? positionY : Number(positionY) || 0;
-
-    const scoringMode = resolveScoringMode(session);
-    const computedScores = computeShotScore({
-      x: normalizedPositionX,
-      y: normalizedPositionY,
-      config: PISTOL_10M_CONFIG,
-      mode: scoringMode,
-    });
-
     const sanitizedShotPayload = { ...shotData };
     delete sanitizedShotPayload.score;
     delete sanitizedShotPayload.ringScore;
     delete sanitizedShotPayload.decimalScore;
     delete sanitizedShotPayload.isInnerTen;
+    delete sanitizedShotPayload.scoreSource;
+
+    const manualScoreMetadata = buildManualScoreMetadata(shotData.score);
+
+    if (!manualScoreMetadata) {
+      return res.status(400).json({
+        error: "Score is required and must be between 0 and 10.9",
+      });
+    }
+
+    const hasPositionX = Object.prototype.hasOwnProperty.call(
+      normalizedBody,
+      "positionX",
+    );
+    const hasPositionY = Object.prototype.hasOwnProperty.call(
+      normalizedBody,
+      "positionY",
+    );
+
+    const normalizedPositionX = hasPositionX
+      ? typeof positionX === "number"
+        ? positionX
+        : Number(positionX) || 0
+      : undefined;
+    const normalizedPositionY = hasPositionY
+      ? typeof positionY === "number"
+        ? positionY
+        : Number(positionY) || 0
+      : undefined;
 
     const shot = new Shot({
       ...sanitizedShotPayload,
-      score:
-        scoringMode === "decimal"
-          ? computedScores.decimalScore
-          : computedScores.ringScore,
-      ringScore: computedScores.ringScore,
-      decimalScore: computedScores.decimalScore,
-      isInnerTen: computedScores.isInnerTen,
+      ...manualScoreMetadata,
       targetNumber: effectiveTargetNumber,
       sessionId,
       userId,
       targetId: target._id,
-      positionX: normalizedPositionX,
-      positionY: normalizedPositionY,
+      ...(hasPositionX ? { positionX: normalizedPositionX } : {}),
+      ...(hasPositionY ? { positionY: normalizedPositionY } : {}),
       ...(timestamp !== undefined ? { timestamp } : {}),
     });
 
@@ -386,8 +462,25 @@ export const updateShot = async (req, res) => {
 
     const normalizedBody = normalizeTargetMetadata(req.body);
 
-    if (normalizedBody.score !== undefined) {
-      shot.score = normalizedBody.score;
+    let manualScoreApplied = false;
+
+    if (Object.prototype.hasOwnProperty.call(normalizedBody, "score")) {
+      const manualScoreMetadata = buildManualScoreMetadata(
+        normalizedBody.score,
+      );
+
+      if (!manualScoreMetadata) {
+        return res.status(400).json({
+          error: "Score must be a number between 0 and 10.9",
+        });
+      }
+
+      shot.score = manualScoreMetadata.score;
+      shot.ringScore = manualScoreMetadata.ringScore;
+      shot.decimalScore = manualScoreMetadata.decimalScore;
+      shot.isInnerTen = manualScoreMetadata.isInnerTen;
+      shot.scoreSource = "manual";
+      manualScoreApplied = true;
     }
     if (normalizedBody.positionX !== undefined) {
       shot.positionX = normalizedBody.positionX;
@@ -453,7 +546,10 @@ export const updateShot = async (req, res) => {
 
     const session = await Session.findById(shot.sessionId);
     const scoringMode = resolveScoringMode(session);
-    assignComputedScoresToShot({ shot, scoringMode });
+
+    if (!manualScoreApplied) {
+      assignComputedScoresToShot({ shot, scoringMode });
+    }
 
     await shot.save();
 

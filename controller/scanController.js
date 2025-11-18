@@ -265,6 +265,7 @@ export const scanTargetAndCreateShots = async (req, res) => {
         ringScore: computedScores.ringScore,
         decimalScore: computedScores.decimalScore,
         isInnerTen: computedScores.isInnerTen,
+        scoreSource: 'computed',
         positionX: normalizedPositionX,
         positionY: normalizedPositionY,
         timestamp: new Date(),
