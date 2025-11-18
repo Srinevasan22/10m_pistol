@@ -60,7 +60,7 @@ def save_debug_image(
         debug_dir.mkdir(parents=True, exist_ok=True)
 
         out_path = debug_dir / f"{img_path.stem}_debug.jpg"
-        cv2.imwrite(str(out_path))
+        cv2.imwrite(str(out_path), debug)
 
         log(f"Saved debug image to {out_path}")
 
