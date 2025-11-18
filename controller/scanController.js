@@ -37,6 +37,7 @@ const runOpenCvDetector = (imagePath) => {
   return new Promise((resolve) => {
     try {
       const scriptPath = path.join(process.cwd(), 'python', 'detect_shots.py');
+      console.log('[scanTarget] Running OpenCV detector:', scriptPath, imagePath);
 
       const py = spawn('python3', [scriptPath, imagePath]);
 
@@ -51,12 +52,14 @@ const runOpenCvDetector = (imagePath) => {
         stderr += data.toString();
       });
 
-      py.on('close', () => {
+      py.on('close', (code) => {
         if (stderr.trim()) {
           console.warn('[OpenCV detector stderr]:', stderr.trim());
         }
+        console.log('[OpenCV detector exited with code]', code);
 
         if (!stdout.trim()) {
+          console.warn('[OpenCV detector] No stdout, returning []');
           return resolve([]);
         }
 
@@ -68,6 +71,7 @@ const runOpenCvDetector = (imagePath) => {
           if (Array.isArray(parsed.shots)) {
             return resolve(parsed.shots);
           }
+          console.warn('[OpenCV detector] Parsed JSON has no shots array');
           return resolve([]);
         } catch (err) {
           console.error('Failed to parse OpenCV detector JSON:', err.message);
@@ -102,10 +106,8 @@ export const scanTargetAndCreateShots = async (req, res) => {
   let imagePath;
   try {
     const { userId, sessionId } = req.params;
-
-    if (!req.file) {
-      return res.status(400).json({ error: 'Image file (image) is required' });
-    }
+    console.log('[scanTarget] params:', req.params);
+    console.log('[scanTarget] file info:', req.file);
 
     if (!mongoose.Types.ObjectId.isValid(sessionId)) {
       return res.status(400).json({ error: 'Invalid session identifier' });
@@ -123,17 +125,31 @@ export const scanTargetAndCreateShots = async (req, res) => {
         .json({ error: 'You are not allowed to modify this session' });
     }
 
-    imagePath = req.file.path;
-    console.log('Image uploaded for scanning:', imagePath);
+    imagePath = req.file?.path;
+    console.log('[scanTarget] Image uploaded for scanning:', imagePath);
 
-    // 3) Detect shots: try OpenCV script, fallback to fake stub
-    let detectedShots = await runOpenCvDetector(imagePath);
+    let detectedShots = [];
+    let usedStub = false;
 
-    if (!detectedShots || !detectedShots.length) {
+    if (!imagePath) {
       console.warn(
-        'OpenCV detection returned no shots, falling back to fake stub'
+        '[scanTarget] No imagePath found in req.file; using stub detector'
       );
-      detectedShots = fakeDetectShotsFromImage(imagePath);
+      usedStub = true;
+      detectedShots = fakeDetectShotsFromImage('no-file');
+    } else {
+      detectedShots = await runOpenCvDetector(imagePath);
+      console.log(
+        `[scanTarget] OpenCV detector returned ${detectedShots?.length || 0} shots`
+      );
+
+      if (!detectedShots || !detectedShots.length) {
+        console.warn(
+          '[scanTarget] OpenCV detection returned no shots, falling back to fake stub',
+        );
+        usedStub = true;
+        detectedShots = fakeDetectShotsFromImage(imagePath);
+      }
     }
 
     if (!Array.isArray(detectedShots) || detectedShots.length === 0) {
@@ -185,8 +201,14 @@ export const scanTargetAndCreateShots = async (req, res) => {
     await session.save();
     await recalculateSessionStats(normalizedSessionId);
 
+    console.log(
+      `[scanTarget] Saved ${createdShots.length} shots for session ${sessionId}`
+    );
+
     res.status(201).json({
-      message: 'Shots detected and saved from scanned target (stub)',
+      message: usedStub
+        ? 'Shots detected and saved from scanned target (stub)'
+        : 'Shots detected and saved from scanned target',
       shots: createdShots,
     });
   } catch (error) {
