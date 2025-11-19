@@ -4,6 +4,16 @@
 
 Automatic detection now looks for **either bright, near-white markers or any saturated colour that is clearly different from the beige paper and black centre** of a 10m pistol target. The guiding rule is contrast: anything that the camera can easily distinguish from beige and black will be picked up.
 
+### Palette baked into the detector
+
+The OpenCV script explicitly checks for the following ranges so the UI copy and the implementation stay aligned:
+
+1. **Bright whites** – round pasters, masking/label tape, the back of a card, and even metallic dots (the specular highlight looks white).
+2. **Saturated neon hues** – painter’s tape or sticky-note squares in pink, green, blue, or orange.
+3. **Borrowed bench colours** – the bright edge of a coloured mat pressed over the hole; it will register as long as it is neon-bright instead of beige or dark leather.
+
+Dark browns, beige strips, or black tape are explicitly filtered out because they blend with the target face and table surfaces.
+
 ### Reliable options
 
 | Marker idea | Why it works |
