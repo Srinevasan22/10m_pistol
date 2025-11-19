@@ -212,8 +212,10 @@ def detect_markers_using_white(img, hsv_img, cx: float, cy: float, target_r: flo
     if not cnts:
         return [], []
 
-    min_area = (target_r ** 2) * 0.0003
-    max_area = (target_r ** 2) * 0.02
+    pellet_radius_px = estimate_pellet_radius_px(target_r)
+    expected_marker_area = np.pi * (pellet_radius_px ** 2)
+    min_area = expected_marker_area * 0.45
+    max_area = expected_marker_area * 2.5
 
     shots = []
     kept_contours = []
