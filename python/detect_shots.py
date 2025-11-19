@@ -96,6 +96,7 @@ def detect_shots(image_path: str):
         h, w = gray.shape[:2]
 
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
     # --- 2. Detect main circular target (outer ring) ---
     # We choose the circle whose center is closest to image center,
@@ -127,19 +128,32 @@ def detect_shots(image_path: str):
         cx, cy, target_r = float(chosen[0]), float(chosen[1]), float(chosen[2])
         log(f"Detected circle center=({cx:.1f},{cy:.1f}), r={target_r:.1f}")
 
-    # --- 3. Detect bright spots (white shots) ---
-    # Strategy: try high thresholds; we want only the brightest highlights
-    # (the white patches), not the whole beige card.
+    # --- 3. Detect high-contrast spots (white or coloured shots) ---
+    # Strategy: start with colour-aware masks that catch either:
+    #   * near-white highlights (the legacy behaviour)
+    #   * saturated, bright colours that are far away from beige/black
+    # If that fails, fall back to the legacy grayscale threshold sweep.
+    white_mask = cv2.inRange(hsv, (0, 0, 210), (179, 45, 255))
+    colour_mask = cv2.inRange(hsv, (0, 80, 120), (179, 255, 255))
+    beige_band = cv2.inRange(hsv, (10, 20, 80), (35, 170, 255))
+    colour_mask = cv2.bitwise_and(colour_mask, cv2.bitwise_not(beige_band))
+    combined_mask = cv2.bitwise_or(white_mask, colour_mask)
+
     contours = []
-    for thr in [250, 245, 240]:
-        _, bright = cv2.threshold(blur, thr, 255, cv2.THRESH_BINARY)
-        cnts, _ = cv2.findContours(
-            bright, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
-        # If we get "enough" blobs, stop lowering the threshold.
-        if len(cnts) >= 3:
-            contours = cnts
-            break
+    cnts, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if cnts:
+        contours = cnts
+
+    if not contours:
+        log("Colour mask failed; falling back to bright grayscale threshold")
+        for thr in [250, 245, 240]:
+            _, bright = cv2.threshold(blur, thr, 255, cv2.THRESH_BINARY)
+            cnts, _ = cv2.findContours(
+                bright, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
+            if len(cnts) >= 3:
+                contours = cnts
+                break
 
     if not contours:
         log("No bright blobs found for shots")
