@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys
 import json
+import math
 import cv2
 import numpy as np
 from pathlib import Path
@@ -70,6 +71,11 @@ def split_inner_outer(roi):
     return inner_mask, outer_mask
 
 
+def estimate_pellet_radius_px(target_radius_px: float) -> int:
+    """Estimate the pellet radius (px) based on the detected target radius."""
+    return max(6, int(target_radius_px * 0.025))
+
+
 def detect_holes_in_mask(
     roi,
     mask,
@@ -88,7 +94,7 @@ def detect_holes_in_mask(
     th = cv2.adaptiveThreshold(
         sub_blur,
         255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.ADAPTIVE_THRESH_MEAN_C,
         cv2.THRESH_BINARY_INV,
         11,
         2,
@@ -98,50 +104,63 @@ def detect_holes_in_mask(
     th = cv2.morphologyEx(th, cv2.MORPH_OPEN, kernel, iterations=1)
     th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, kernel, iterations=1)
 
-    cnts, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(th)
+    one_hole_area = math.pi * (pellet_radius_px ** 2)
+    area_min = 0.5 * one_hole_area
+    area_max = 2.0 * one_hole_area
 
     holes = []
-    one_hole_area = np.pi * (pellet_radius_px ** 2)
-    max_holes_per_component = 10
 
-    for i in range(1, num_labels):
-        area = stats[i, cv2.CC_STAT_AREA]
-        if area < 0.3 * one_hole_area:
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if area < area_min or area > area_max:
             continue
 
-        component_mask = (labels == i).astype(np.uint8)
-        peaks = []
+        perim = cv2.arcLength(cnt, True)
+        if perim == 0:
+            continue
 
-        if area > 1.5 * one_hole_area:
-            dist = cv2.distanceTransform(component_mask, cv2.DIST_L2, 5)
-            dist = dist.astype(np.float32)
-            dilated = cv2.dilate(dist, np.ones((3, 3), np.uint8))
-            min_peak_radius = max(1.0, pellet_radius_px * 0.45)
-            local_max = (
-                (dist >= min_peak_radius)
-                & np.isclose(dist, dilated, atol=1e-2)
-            )
-            peak_mask = np.zeros_like(component_mask, dtype=np.uint8)
-            peak_mask[local_max] = 1
-            num_peaks, _, _, peak_centroids = cv2.connectedComponentsWithStats(
-                peak_mask
-            )
-            for j in range(1, num_peaks):
-                px, py = peak_centroids[j]
-                peaks.append((px, py))
+        circularity = 4 * math.pi * area / (perim * perim)
+        if circularity < 0.45:
+            continue
 
-        if not peaks:
-            x_c, y_c = centroids[i]
-            n_est = max(1, int(round(area / one_hole_area)))
-            n_est = min(n_est, max_holes_per_component)
-            peaks = [(x_c, y_c)] * n_est
+        (x_c, y_c), _ = cv2.minEnclosingCircle(cnt)
+        holes.append((x_c, y_c))
 
-        for (px, py) in peaks:
-            holes.append((px, py))
+    log(
+        f"[scan] components={len(contours)}, filtered={len(holes)}, "
+        f"pellet_radius_px={pellet_radius_px}"
+    )
 
-    return holes, cnts
+    return holes, contours
+
+
+def merge_close_points(points, min_dist):
+    """Merge nearby detections so each physical hole yields one point."""
+
+    merged = []
+
+    for x, y in points:
+        if not merged:
+            merged.append([x, y, 1])
+            continue
+
+        found = False
+        for cluster in merged:
+            cx, cy, cnt = cluster
+            if (x - cx) ** 2 + (y - cy) ** 2 <= min_dist ** 2:
+                new_cnt = cnt + 1
+                cluster[0] = (cx * cnt + x) / new_cnt
+                cluster[1] = (cy * cnt + y) / new_cnt
+                cluster[2] = new_cnt
+                found = True
+                break
+
+        if not found:
+            merged.append([x, y, 1])
+
+    return [(cx, cy, cnt) for cx, cy, cnt in merged]
 
 
 def compute_scores_from_normalized(dx, dy):
@@ -155,8 +174,8 @@ def compute_scores_from_normalized(dx, dy):
             ring_score = float(score_val)
             break
 
-    decimal_score = ring_score  # placeholder for more precise scoring later
-    is_inner_ten = dist_ratio <= RING_RATIO_THRESHOLDS[0][1]
+    decimal_score = max(0.0, 10.9 - dist_ratio * 10.9)
+    is_inner_ten = decimal_score > 10.5
     return ring_score, decimal_score, is_inner_ten
 
 
@@ -243,7 +262,7 @@ def detect_shots_two_pass(gray, cx, cy, target_r):
         return [], []
 
     inner_mask, outer_mask = split_inner_outer(roi)
-    pellet_radius_px = max(3, int(target_r * 0.03))
+    pellet_radius_px = estimate_pellet_radius_px(target_r)
 
     holes_outer, cnts_outer = detect_holes_in_mask(
         roi, outer_mask, hole_is_dark=True, pellet_radius_px=pellet_radius_px
@@ -253,6 +272,12 @@ def detect_shots_two_pass(gray, cx, cy, target_r):
     )
 
     all_holes = holes_outer + holes_inner
+    merged_points = merge_close_points(
+        all_holes, min_dist=pellet_radius_px * 0.8
+    )
+
+    log(f"[scan] raw points={len(all_holes)}, merged={len(merged_points)}")
+
     contours = []
     for cnt in cnts_outer + cnts_inner:
         if cnt.size == 0:
@@ -260,7 +285,7 @@ def detect_shots_two_pass(gray, cx, cy, target_r):
         contours.append(cnt + np.array([[[x0, y0]]]))
 
     shots = []
-    for (x, y) in all_holes:
+    for (x, y, count) in merged_points:
         x_global = x + x0
         y_global = y + y0
         norm_x = (x_global - cx) / target_r
@@ -268,17 +293,19 @@ def detect_shots_two_pass(gray, cx, cy, target_r):
         ring_score, decimal_score, is_inner_ten = compute_scores_from_normalized(
             norm_x, norm_y
         )
-        shots.append(
-            {
-                "score": decimal_score,
-                "ringScore": ring_score,
-                "decimalScore": decimal_score,
-                "positionX": float(norm_x),
-                "positionY": float(norm_y),
-                "scoreSource": "computed",
-                "isInnerTen": bool(is_inner_ten),
-            }
-        )
+
+        for _ in range(max(1, int(round(count)))):
+            shots.append(
+                {
+                    "score": ring_score,
+                    "ringScore": ring_score,
+                    "decimalScore": decimal_score,
+                    "positionX": float(norm_x),
+                    "positionY": float(norm_y),
+                    "scoreSource": "computed",
+                    "isInnerTen": bool(is_inner_ten),
+                }
+            )
 
     return shots, contours
 
