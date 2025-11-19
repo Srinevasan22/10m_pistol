@@ -20,6 +20,40 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
+const SCAN_UPLOAD_FIELD_NAMES = [
+  'image',
+  'targetImage',
+  'scan',
+  'scanImage',
+  'scanFile',
+  'photo',
+  'file',
+];
+
+const scanUpload = [
+  upload.fields(SCAN_UPLOAD_FIELD_NAMES.map((name) => ({ name, maxCount: 1 }))),
+  (req, res, next) => {
+    const pickFirstUploadedFile = () => {
+      if (!req.files) {
+        return null;
+      }
+
+      for (const fieldName of SCAN_UPLOAD_FIELD_NAMES) {
+        const candidate = req.files[fieldName]?.[0];
+        if (candidate) {
+          return candidate;
+        }
+      }
+
+      const groupedFiles = Object.values(req.files).flat().filter(Boolean);
+      return groupedFiles.length ? groupedFiles[0] : null;
+    };
+
+    req.file = req.file || pickFirstUploadedFile();
+    next();
+  },
+];
+
 import {
   addSession,
   getSessions,
@@ -116,7 +150,7 @@ router.delete('/:sessionId/shots/:shotId', deleteShot);
 // POST /pistol/users/:userId/sessions/:sessionId/scan-target
 router.post(
   '/:sessionId/scan-target',
-  upload.single('image'),
+  ...scanUpload,
   scanTargetAndCreateShots,
 );
 
