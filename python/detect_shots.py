@@ -94,7 +94,7 @@ def detect_holes_in_mask(
     th = cv2.adaptiveThreshold(
         sub_blur,
         255,
-        cv2.ADAPTIVE_THRESH_MEAN_C,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY_INV,
         11,
         2,
@@ -104,36 +104,72 @@ def detect_holes_in_mask(
     th = cv2.morphologyEx(th, cv2.MORPH_OPEN, kernel, iterations=1)
     th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, kernel, iterations=1)
 
-    contours, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cnts, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    one_hole_area = math.pi * (pellet_radius_px ** 2)
-    area_min = 0.5 * one_hole_area
-    area_max = 2.0 * one_hole_area
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(th)
 
     holes = []
+    one_hole_area = np.pi * (pellet_radius_px ** 2)
+    max_holes_per_component = 10
 
-    for cnt in contours:
-        area = cv2.contourArea(cnt)
-        if area < area_min or area > area_max:
+    for i in range(1, num_labels):
+        stat_area = stats[i, cv2.CC_STAT_AREA]
+        if stat_area < 0.3 * one_hole_area:
             continue
 
-        perim = cv2.arcLength(cnt, True)
-        if perim == 0:
+        component_mask = (labels == i).astype(np.uint8)
+
+        comp_contours, _ = cv2.findContours(
+            component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        if not comp_contours:
             continue
 
-        circularity = 4 * math.pi * area / (perim * perim)
-        if circularity < 0.45:
+        comp_cnt = max(comp_contours, key=cv2.contourArea)
+        contour_area = cv2.contourArea(comp_cnt)
+        perimeter = cv2.arcLength(comp_cnt, True) if comp_cnt is not None else 0.0
+        if perimeter <= 0.0:
             continue
 
-        (x_c, y_c), _ = cv2.minEnclosingCircle(cnt)
-        holes.append((x_c, y_c))
+        circularity = 4.0 * np.pi * contour_area / (perimeter * perimeter)
 
-    log(
-        f"[scan] components={len(contours)}, filtered={len(holes)}, "
-        f"pellet_radius_px={pellet_radius_px}"
-    )
+        if circularity < 0.55:
+            continue
 
-    return holes, contours
+        area = contour_area
+
+        peaks = []
+
+        if area > 1.5 * one_hole_area:
+            dist = cv2.distanceTransform(component_mask, cv2.DIST_L2, 5)
+            dist = dist.astype(np.float32)
+            dilated = cv2.dilate(dist, np.ones((3, 3), np.uint8))
+
+            min_peak_radius = max(1.0, pellet_radius_px * 0.45)
+            local_max = (
+                (dist >= min_peak_radius)
+                & np.isclose(dist, dilated, atol=1e-2)
+            )
+
+            peak_mask = np.zeros_like(component_mask, dtype=np.uint8)
+            peak_mask[local_max] = 1
+            num_peaks, _, _, peak_centroids = cv2.connectedComponentsWithStats(
+                peak_mask
+            )
+            for j in range(1, num_peaks):
+                px, py = peak_centroids[j]
+                peaks.append((px, py))
+
+        if not peaks:
+            x_c, y_c = centroids[i]
+            n_est = max(1, int(round(area / one_hole_area)))
+            n_est = min(n_est, max_holes_per_component)
+            peaks = [(x_c, y_c)] * n_est
+
+        for (px, py) in peaks:
+            holes.append((px, py))
+
+    return holes, cnts
 
 
 def merge_close_points(points, min_dist):
@@ -272,6 +308,10 @@ def detect_shots_two_pass(gray, cx, cy, target_r):
     )
 
     all_holes = holes_outer + holes_inner
+    log(
+        f"Two-pass: outer={len(holes_outer)}, inner={len(holes_inner)}, "
+        f"total_raw={len(all_holes)}"
+    )
     merged_points = merge_close_points(
         all_holes, min_dist=pellet_radius_px * 0.8
     )
