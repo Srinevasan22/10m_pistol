@@ -243,7 +243,9 @@ def detect_shots(image_path: str):
     combined_mask = build_marker_mask(hsv)
 
     contours = []
-    cnts, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cnts, _ = cv2.findContours(
+        combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
     if cnts:
         contours = cnts
 
@@ -258,8 +260,34 @@ def detect_shots(image_path: str):
                 contours = cnts
                 break
 
+    # Many shooters do not place white pasters on every hole; when both colour
+    # and bright-threshold detection fail we attempt to find the *dark* pellet
+    # holes directly.  This keeps the script useful for default targets instead
+    # of bailing out and returning an empty shot list (which causes the Node
+    # layer to drop back to fake detections).
     if not contours:
-        log("No bright blobs found for shots")
+        log(
+            "Bright markers not found; searching for dark pellet holes with adaptive threshold"
+        )
+        for block_size in [11, 15, 21]:
+            dark = cv2.adaptiveThreshold(
+                blur,
+                255,
+                cv2.ADAPTIVE_THRESH_MEAN_C,
+                cv2.THRESH_BINARY_INV,
+                block_size,
+                5,
+            )
+            dark = cv2.medianBlur(dark, 5)
+            cnts, _ = cv2.findContours(
+                dark, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
+            if len(cnts) >= 3:
+                contours = cnts
+                break
+
+    if not contours:
+        log("No bright or dark blobs found for shots")
         contours = []
 
     shots = []
@@ -323,6 +351,7 @@ def detect_shots(image_path: str):
         image_path=image_path,
     )
 
+    log(f"Returning {len(shots)} detected shots")
     return shots
 
 
