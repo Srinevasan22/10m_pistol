@@ -42,6 +42,22 @@ def log(*args):
     print(*args, file=sys.stderr)
 
 
+# --- Global detector limits --------------------------------------------------
+
+MAX_SHOTS_PER_TARGET = 15  # hard ceiling per scanned card
+
+
+def limit_shots(shots, max_shots=MAX_SHOTS_PER_TARGET):
+    """Keep at most max_shots, prioritising shots closest to 10."""
+    if len(shots) <= max_shots:
+        return shots
+
+    # shots are already sorted by closeness to 10 below; we only log & slice
+    limited = shots[:max_shots]
+    log(f"[scan] Limiting shots from {len(shots)} to {len(limited)}")
+    return limited
+
+
 def detect_target_circle(gray):
     """Detect the main target circle using Hough transform."""
     blur = cv2.GaussianBlur(gray, (9, 9), 0)
@@ -133,7 +149,8 @@ def detect_holes_in_mask(
 
         circularity = 4.0 * np.pi * contour_area / (perimeter * perimeter)
 
-        if circularity < 0.55:
+        # NEW: be stricter – keep only very round blobs
+        if circularity < 0.70:
             continue
 
         area = contour_area
@@ -160,11 +177,22 @@ def detect_holes_in_mask(
                 px, py = peak_centroids[j]
                 peaks.append((px, py))
 
+        # NEW: fallback only for “hole-sized” circular blobs.
+        # Anything much smaller or larger is treated as noise (ring segments, etc.).
         if not peaks:
             x_c, y_c = centroids[i]
-            n_est = max(1, int(round(area / one_hole_area)))
-            n_est = min(n_est, max_holes_per_component)
-            peaks = [(x_c, y_c)] * n_est
+
+            if 0.5 * one_hole_area <= area <= 2.0 * one_hole_area:
+                # one physical pellet hole
+                n_est = 1
+                peaks = [(x_c, y_c)] * n_est
+            else:
+                # too small or too big → probably not a single pellet hole
+                # legacy logic kept here for reference:
+                # n_est = max(1, int(round(area / one_hole_area)))
+                # n_est = min(n_est, max_holes_per_component)
+                # peaks = [(x_c, y_c)] * n_est
+                continue
 
         for (px, py) in peaks:
             holes.append((px, py))
@@ -469,8 +497,15 @@ def detect_shots(image_path: str):
                 }
             )
 
-    # sort inner to outer
+    # sort inner to outer (closest to 10 first)
     shots.sort(key=lambda s: abs(s.get("ringScore", 0.0) - 10.0))
+
+    log(f"[scan] Total shots before limit: {len(shots)}")
+
+    # NEW: hard cap so we don't save hundreds of artifacts
+    shots = limit_shots(shots)
+
+    log(f"[scan] Total shots after limit: {len(shots)}")
 
     # --- 6. Save debug image with circles, contours, and shot dots ---
     save_debug_image(
