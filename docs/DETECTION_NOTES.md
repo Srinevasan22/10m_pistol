@@ -36,3 +36,12 @@ Dark browns, beige strips, or black tape are explicitly filtered out because the
 ## Future extension: environment colour markers
 
 The detector has a placeholder for sampling an additional colour from the shooter’s environment (e.g. neon tape on the bench). A future UI flow can allow the user to sample that colour, after which it can be passed to the detector and combined with the white marker mask.
+
+## Environment setup
+
+The OpenCV detector is a standalone Python script (`python/detect_shots.py`) that the Node server launches via `python3`. The script requires both Python packages and a native OpenGL runtime before it can emit any detections:
+
+1. Install the Python dependencies with `pip install -r python/requirements.txt`. They pin `opencv-python-headless` for the detector and `numpy` for matrix math.
+2. Install the system library that backs OpenCV’s video/GL routines: `sudo apt-get install -y libgl1`. Without `libGL.so.1` the detector fails during import and the server falls back to the three-shot stub.
+
+If either dependency is missing the server log will show `[OpenCV detector stderr]` entries followed by “OpenCV detection returned no shots.” Ensure the requirements are installed before investigating the image data itself.
