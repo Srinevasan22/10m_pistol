@@ -92,6 +92,176 @@ def estimate_pellet_radius_px(target_radius_px: float) -> int:
     return max(6, int(target_radius_px * 0.025))
 
 
+def sample_paper_mean(hsv_img, cx: float, cy: float, target_r: float):
+    """Estimate the beige paper colour by sampling boxes near the target edges."""
+
+    h, w = hsv_img.shape[:2]
+    x0 = max(int(cx - target_r), 0)
+    y0 = max(int(cy - target_r), 0)
+    x1 = min(int(cx + target_r), w)
+    y1 = min(int(cy + target_r), h)
+
+    sample_w = max(6, int((x1 - x0) * 0.15))
+    sample_h = max(6, int((y1 - y0) * 0.15))
+
+    boxes = []
+    boxes.append(hsv_img[y0 : y0 + sample_h, x0 : x0 + sample_w])
+    boxes.append(hsv_img[y0 : y0 + sample_h, max(x1 - sample_w, x0) : x1])
+    boxes.append(hsv_img[max(y1 - sample_h, y0) : y1, x0 : x0 + sample_w])
+    boxes.append(
+        hsv_img[
+            max(y1 - sample_h, y0) : y1,
+            max(x1 - sample_w, x0) : x1,
+        ]
+    )
+
+    valid = [b.reshape(-1, 3) for b in boxes if b.size > 0]
+    if not valid:
+        return tuple(np.mean(hsv_img.reshape(-1, 3), axis=0).tolist())
+
+    stacked = np.concatenate(valid, axis=0)
+    mean_color = tuple(np.mean(stacked, axis=0).tolist())
+    return mean_color
+
+
+def build_white_marker_mask(hsv_img, paper_mean):
+    """Return a binary mask for pixels that are much brighter and less saturated."""
+
+    if paper_mean is None:
+        return np.zeros(hsv_img.shape[:2], dtype=np.uint8)
+
+    _, paper_sat, paper_val = paper_mean
+
+    sat_threshold = min(60.0, max(5.0, paper_sat - 20.0))
+    val_threshold = max(200.0, paper_val + 30.0)
+
+    sat_channel = hsv_img[:, :, 1].astype(np.float32)
+    val_channel = hsv_img[:, :, 2].astype(np.float32)
+
+    mask = np.zeros_like(sat_channel, dtype=np.uint8)
+    bright = val_channel >= val_threshold
+    desat = sat_channel <= sat_threshold
+    mask[np.logical_and(bright, desat)] = 255
+
+    return mask
+
+
+def detect_markers_using_env_color(hsv_img, env_color=None, tolerances=(10, 40, 40)):
+    """
+    Build a mask around a sampled environment colour.
+    Not yet used in V1, but kept for future extension.
+    """
+
+    if env_color is None:
+        return np.zeros(hsv_img.shape[:2], dtype=np.uint8)
+
+    he, se, ve = env_color
+    d_h, d_s, d_v = tolerances
+
+    h_channel = hsv_img[:, :, 0].astype(np.int16)
+    s_channel = hsv_img[:, :, 1].astype(np.int16)
+    v_channel = hsv_img[:, :, 2].astype(np.int16)
+
+    # Hue is circular (0-179). Handle wrap-around by checking both distances.
+    hue_diff = np.minimum(
+        np.abs(h_channel - int(he)), 180 - np.abs(h_channel - int(he))
+    )
+
+    mask = (
+        (hue_diff <= int(d_h))
+        & (np.abs(s_channel - int(se)) <= int(d_s))
+        & (np.abs(v_channel - int(ve)) <= int(d_v))
+    )
+
+    out = np.zeros_like(h_channel, dtype=np.uint8)
+    out[mask] = 255
+    return out
+
+
+def detect_markers_using_white(img, hsv_img, cx: float, cy: float, target_r: float):
+    """
+    Detect high-contrast white markers on the target surface and return shot dicts.
+    """
+
+    paper_mean = sample_paper_mean(hsv_img, cx, cy, target_r)
+    marker_mask = build_white_marker_mask(hsv_img, paper_mean)
+
+    if marker_mask is None or cv2.countNonZero(marker_mask) == 0:
+        return [], []
+
+    circle_mask = np.zeros_like(marker_mask, dtype=np.uint8)
+    cv2.circle(
+        circle_mask,
+        (int(round(cx)), int(round(cy))),
+        int(round(target_r * 1.2)),
+        255,
+        -1,
+    )
+    marker_mask = cv2.bitwise_and(marker_mask, circle_mask)
+
+    kernel = np.ones((3, 3), np.uint8)
+    marker_mask = cv2.morphologyEx(marker_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+    marker_mask = cv2.morphologyEx(marker_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+    marker_mask = cv2.GaussianBlur(marker_mask, (5, 5), 0)
+    _, marker_mask = cv2.threshold(marker_mask, 127, 255, cv2.THRESH_BINARY)
+
+    cnts, _ = cv2.findContours(
+        marker_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+
+    if not cnts:
+        return [], []
+
+    min_area = (target_r ** 2) * 0.0003
+    max_area = (target_r ** 2) * 0.02
+
+    shots = []
+    kept_contours = []
+
+    for cnt in cnts:
+        area = cv2.contourArea(cnt)
+        if area < min_area or area > max_area:
+            continue
+
+        perimeter = cv2.arcLength(cnt, True)
+        if perimeter == 0:
+            continue
+
+        circularity = 4.0 * np.pi * area / (perimeter * perimeter)
+        if circularity < 0.5:
+            continue
+
+        (x, y), _ = cv2.minEnclosingCircle(cnt)
+        dist_center = np.hypot(x - cx, y - cy)
+        if dist_center > target_r * 1.2:
+            continue
+
+        norm_x = (x - cx) / target_r
+        norm_y = (y - cy) / target_r
+        ring_score, decimal_score, is_inner_ten = compute_scores_from_normalized(
+            norm_x, norm_y
+        )
+
+        shots.append(
+            {
+                "score": ring_score,
+                "ringScore": ring_score,
+                "decimalScore": decimal_score,
+                "positionX": float(norm_x),
+                "positionY": float(norm_y),
+                "scoreSource": "white-marker",
+                "isInnerTen": bool(is_inner_ten),
+            }
+        )
+        kept_contours.append(cnt)
+
+    log(
+        f"[white-marker] detected {len(shots)} shots out of {len(cnts)} candidate blobs"
+    )
+
+    return shots, kept_contours
+
+
 def detect_holes_in_mask(
     roi,
     mask,
@@ -393,6 +563,7 @@ def detect_shots(image_path: str):
         raise RuntimeError(f"Could not read image: {image_path}")
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     h, w = gray.shape[:2]
 
     # Optional: downscale very large images to speed up processing
@@ -403,6 +574,7 @@ def detect_shots(image_path: str):
         new_h = int(h * scale)
         img = cv2.resize(img, (new_w, new_h))
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         h, w = gray.shape[:2]
 
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -446,7 +618,16 @@ def detect_shots(image_path: str):
         log(f"Detected circle center=({cx:.1f},{cy:.1f}), r={target_r:.1f}")
 
     # --- 3. Two-pass shot detection (outer beige + inner black) ---
-    shots, contours = detect_shots_two_pass(gray, cx, cy, target_r)
+    marker_shots, marker_contours = detect_markers_using_white(
+        img=img, hsv_img=hsv, cx=cx, cy=cy, target_r=target_r
+    )
+
+    shots = marker_shots
+    contours = marker_contours
+
+    if not shots:
+        log("White-marker detector found no shots, falling back to hole detector")
+        shots, contours = detect_shots_two_pass(gray, cx, cy, target_r)
 
     if not shots:
         log("Two-pass detector found no shots, falling back to bright-blob mode")
