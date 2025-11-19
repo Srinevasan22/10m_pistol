@@ -2,19 +2,25 @@
 
 ## Accepted marker colours for V1
 
-Automatic detection currently looks for **bright, near-white markers** that stand out from the beige paper and black centre of a 10m pistol target. Anything that is very bright and has low saturation works well:
+Automatic detection now looks for **either bright, near-white markers or any saturated colour that is clearly different from the beige paper and black centre** of a 10m pistol target. The guiding rule is contrast: anything that the camera can easily distinguish from beige and black will be picked up.
 
-- White pasters or round stickers
-- White masking or label tape
-- The white back side of the target card
-- Bright reflections from lamps on glossy white paper
+### Reliable options
 
-These guidelines are the copy that should be shown in the "Scan target" UI:
+| Marker idea | Why it works |
+| --- | --- |
+| White pasters or round stickers | Still the highest-contrast option and the baseline the detector was tuned for. |
+| White masking / label tape, or the white back of a target card | Provides the same near-white highlight as pasters when you run out of stickers. |
+| Neon painter's tape (pink, green, orange) | Highly saturated colours that almost never appear on the target itself, so they read as distinct blobs. |
+| Bright sticky notes cut into squares | Easy to find on a shooting bench and available in many neon colours for contrast. |
+| A bright table/mat edge pressed over the hole | Many shooters already have a coloured bench mat; sliding a small piece over the impact creates a large colour patch that stands apart from beige/black. |
+| Metallic or reflective dots | Reflections act like white highlights and are easy for the detector to isolate. |
+
+### UI copy for "Scan target"
 
 > **How to mark your shots for automatic detection**
 >
 > * Use white round stickers, white masking tape or any other bright white mark on each hit.
-> * Any very bright, whitish surface works as long as it clearly stands out from the beige paper and the black centre.
+> * If you are out of white markers, cover the hole with something **boldly coloured** (neon pink/green tape, a bright sticky note, or even the edge of a coloured shooting mat) so long as it clearly differs from both the beige paper and the black centre.
 > * Avoid beige, brown or very dark markers – they blend into the target and will not be detected reliably.
 
 ## Future extension: environment colour markers
