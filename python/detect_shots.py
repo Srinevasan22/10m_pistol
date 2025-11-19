@@ -62,6 +62,13 @@ MARKER_COLOUR_RULES: Tuple[ColourRule, ...] = (
     ),
 )
 
+# Relative contour area thresholds (computed against the detected target
+# radius).  "min" is intentionally tiny so we can still pick up raw pellet
+# holes when a shooter forgets to cover them with tape.  "max" remains tight so
+# that large table edges or target borders are ignored.
+MIN_AREA_FACTOR = 0.00012
+MAX_AREA_FACTOR = 0.035
+
 BACKGROUND_SWATCHES: Tuple[ColourRule, ...] = (
     # Target beige paper (and most wooden benches) cluster in this range.
     ColourRule(
@@ -113,6 +120,12 @@ def build_marker_mask(hsv_img: np.ndarray) -> np.ndarray:
     clean_mask = cv2.bitwise_and(
         combined_marker_mask, cv2.bitwise_not(combined_background_mask)
     )
+
+    # Close tiny gaps inside rings/holes so we end up with solid contours even
+    # when the marker is only a thin neon outline.
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    clean_mask = cv2.morphologyEx(clean_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+    clean_mask = cv2.medianBlur(clean_mask, 3)
     return clean_mask
 
 
@@ -248,6 +261,13 @@ def detect_shots(image_path: str):
     )
     if cnts:
         contours = cnts
+        largest = max(cv2.contourArea(c) for c in contours)
+        target_area = np.pi * (target_r ** 2)
+        if largest > target_area * 0.6:
+            log(
+                "Colour mask latched onto the whole target; discarding and trying grayscale"
+            )
+            contours = []
 
     if not contours:
         log("Colour mask failed; falling back to bright grayscale threshold")
@@ -294,8 +314,13 @@ def detect_shots(image_path: str):
 
     # Area thresholds relative to target size:
     # for your sample image, shots are ~1600 px area.
-    min_area = (target_r ** 2) * 0.0005
-    max_area = (target_r ** 2) * 0.02
+    min_area = (target_r ** 2) * MIN_AREA_FACTOR
+    max_area = (target_r ** 2) * MAX_AREA_FACTOR
+
+    if contours:
+        log(
+            f"Found {len(contours)} potential blobs before filtering (area range {min_area:.1f}-{max_area:.1f})"
+        )
 
     for cnt in contours:
         area = cv2.contourArea(cnt)
