@@ -31,18 +31,6 @@ const serializeShot = (shotDoc) => {
   return shotObject;
 };
 
-const fakeDetectShotsFromImage = (imagePath) => {
-  if (!imagePath) {
-    return [];
-  }
-
-  return [
-    { score: 9.9, positionX: 0.02, positionY: -0.05 },
-    { score: 9.4, positionX: -0.1, positionY: 0.08 },
-    { score: 8.6, positionX: 0.3, positionY: 0.2 },
-  ];
-};
-
 const safeDeleteFile = async (filePath) => {
   if (!filePath) {
     return;
@@ -179,39 +167,30 @@ export const scanTargetAndCreateShots = async (req, res) => {
     imagePath = req.file?.path;
     console.log('[scanTarget] Image uploaded for scanning:', imagePath);
 
+    if (!imagePath) {
+      console.warn('[scanTarget] No imagePath found in req.file; aborting scan');
+      return res
+        .status(400)
+        .json({ error: 'No image file was provided for scanning' });
+    }
+
     const scoringMode = normalizeScoringMode(session?.scoringMode);
 
     const normalizedImagePath = normalizeToUploadsPath(imagePath);
     const debugImagePath = buildDebugImagePath(normalizedImagePath);
 
-    let detectedShots = [];
-    let usedStub = false;
-
-    if (!imagePath) {
-      console.warn(
-        '[scanTarget] No imagePath found in req.file; using stub detector'
-      );
-      usedStub = true;
-      detectedShots = fakeDetectShotsFromImage('no-file');
-    } else {
-      detectedShots = await runOpenCvDetector(imagePath);
-      console.log(
-        `[scanTarget] OpenCV detector returned ${detectedShots?.length || 0} shots`
-      );
-
-      if (!detectedShots || !detectedShots.length) {
-        console.warn(
-          '[scanTarget] OpenCV detection returned no shots, falling back to fake stub',
-        );
-        usedStub = true;
-        detectedShots = fakeDetectShotsFromImage(imagePath);
-      }
-    }
+    const detectedShots = await runOpenCvDetector(imagePath);
+    console.log(
+      `[scanTarget] OpenCV detector returned ${detectedShots?.length || 0} shots`
+    );
 
     if (!Array.isArray(detectedShots) || detectedShots.length === 0) {
-      return res.status(200).json({
-        message: 'No shots detected on the image',
-        shots: [],
+      console.error(
+        '[scanTarget] Shot detection failed – detector returned no usable shots'
+      );
+      return res.status(502).json({
+        error:
+          'Automatic shot detection failed. Please retake the photo so the target is clearly visible and try again.',
       });
     }
 
@@ -229,8 +208,7 @@ export const scanTargetAndCreateShots = async (req, res) => {
       targetNumber: nextTargetNumber,
       shots: [],
       scanImagePath: normalizedImagePath,
-      debugImagePath:
-        (await fileExists(debugImagePath)) && !usedStub ? debugImagePath : null,
+      debugImagePath: (await fileExists(debugImagePath)) ? debugImagePath : null,
     });
 
     if (!Array.isArray(session.targets)) {
@@ -305,9 +283,7 @@ export const scanTargetAndCreateShots = async (req, res) => {
     };
 
     res.status(201).json({
-      message: usedStub
-        ? 'Shots detected and saved from scanned target (stub)'
-        : 'Shots detected and saved from scanned target',
+      message: 'Shots detected and saved from scanned target',
       shots: serializedShots,
       target: responseTarget,
     });
