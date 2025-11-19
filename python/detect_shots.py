@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 import sys
 import json
+from dataclasses import dataclass
+from typing import Iterable, Tuple
+
 import cv2
 import numpy as np
 from pathlib import Path
@@ -8,6 +11,109 @@ from pathlib import Path
 
 def log(*args):
     print(*args, file=sys.stderr)
+
+
+@dataclass(frozen=True)
+class ColourRule:
+    """HSV range describing a colour blob we expect to see on the target."""
+
+    name: str
+    hsv_lower: Tuple[int, int, int]
+    hsv_upper: Tuple[int, int, int]
+
+
+# The automatic detector assumes a beige/black 10m pistol target. Markers must
+# contrast sharply with those tones, so we explicitly track the high-contrast
+# blobs we support. The hue ranges mirror the user guidance documented in
+# docs/DETECTION_NOTES.md.
+MARKER_COLOUR_RULES: Tuple[ColourRule, ...] = (
+    ColourRule(
+        name="bright_white",
+        hsv_lower=(0, 0, 215),
+        hsv_upper=(179, 40, 255),
+    ),
+    # Neon / saturated tapes and sticky notes rarely match the beige target.
+    ColourRule(
+        name="neon_pink",
+        hsv_lower=(150, 120, 150),
+        hsv_upper=(179, 255, 255),
+    ),
+    ColourRule(
+        name="neon_orange",
+        hsv_lower=(5, 150, 180),
+        hsv_upper=(25, 255, 255),
+    ),
+    ColourRule(
+        name="neon_green",
+        hsv_lower=(35, 120, 160),
+        hsv_upper=(85, 255, 255),
+    ),
+    ColourRule(
+        name="neon_blue",
+        hsv_lower=(85, 120, 160),
+        hsv_upper=(130, 255, 255),
+    ),
+    # Metallic stickers behave like white specular highlights, so we give them a
+    # slightly more permissive value band while keeping saturation low.
+    ColourRule(
+        name="metallic_reflection",
+        hsv_lower=(0, 0, 200),
+        hsv_upper=(179, 80, 255),
+    ),
+)
+
+BACKGROUND_SWATCHES: Tuple[ColourRule, ...] = (
+    # Target beige paper (and most wooden benches) cluster in this range.
+    ColourRule(
+        name="target_beige",
+        hsv_lower=(10, 20, 80),
+        hsv_upper=(35, 160, 230),
+    ),
+    # Very dark cloth/leather benches shouldn't register as markers either.
+    ColourRule(
+        name="dark_tabletop",
+        hsv_lower=(0, 0, 0),
+        hsv_upper=(179, 255, 70),
+    ),
+)
+
+
+def stack_masks(masks: Iterable[np.ndarray]) -> np.ndarray:
+    mask = None
+    for m in masks:
+        mask = m if mask is None else cv2.bitwise_or(mask, m)
+    if mask is None:
+        mask = np.zeros((1, 1), dtype=np.uint8)
+    return mask
+
+
+def build_marker_mask(hsv_img: np.ndarray) -> np.ndarray:
+    colour_masks = [
+        cv2.inRange(
+            hsv_img,
+            np.array(rule.hsv_lower, dtype=np.uint8),
+            np.array(rule.hsv_upper, dtype=np.uint8),
+        )
+        for rule in MARKER_COLOUR_RULES
+    ]
+    combined_marker_mask = stack_masks(colour_masks)
+
+    background_masks = [
+        cv2.inRange(
+            hsv_img,
+            np.array(rule.hsv_lower, dtype=np.uint8),
+            np.array(rule.hsv_upper, dtype=np.uint8),
+        )
+        for rule in BACKGROUND_SWATCHES
+    ]
+    combined_background_mask = stack_masks(background_masks)
+
+    # Remove the beige/dark ranges so coloured bench mats only register when the
+    # hue/value contrast is extreme (neon edge pressed over a hole).
+    clean_mask = cv2.bitwise_and(
+        combined_marker_mask, cv2.bitwise_not(combined_background_mask)
+    )
+    return clean_mask
 
 
 def save_debug_image(
@@ -129,15 +235,12 @@ def detect_shots(image_path: str):
         log(f"Detected circle center=({cx:.1f},{cy:.1f}), r={target_r:.1f}")
 
     # --- 3. Detect high-contrast spots (white or coloured shots) ---
-    # Strategy: start with colour-aware masks that catch either:
-    #   * near-white highlights (the legacy behaviour)
-    #   * saturated, bright colours that are far away from beige/black
-    # If that fails, fall back to the legacy grayscale threshold sweep.
-    white_mask = cv2.inRange(hsv, (0, 0, 210), (179, 45, 255))
-    colour_mask = cv2.inRange(hsv, (0, 80, 120), (179, 255, 255))
-    beige_band = cv2.inRange(hsv, (10, 20, 80), (35, 170, 255))
-    colour_mask = cv2.bitwise_and(colour_mask, cv2.bitwise_not(beige_band))
-    combined_mask = cv2.bitwise_or(white_mask, colour_mask)
+    # Strategy: start with colour-aware masks that mirror the "bright white or
+    # saturated neon" guidance shared with users. Each range corresponds to the
+    # bright markers listed in docs/DETECTION_NOTES.md. We also strip out beige
+    # and near-black backgrounds so coloured bench mats only register when they
+    # are truly neon or metallic.
+    combined_mask = build_marker_mask(hsv)
 
     contours = []
     cnts, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
