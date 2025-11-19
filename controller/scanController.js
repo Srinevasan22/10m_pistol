@@ -184,13 +184,24 @@ export const scanTargetAndCreateShots = async (req, res) => {
       `[scanTarget] OpenCV detector returned ${detectedShots?.length || 0} shots`
     );
 
-    if (!Array.isArray(detectedShots) || detectedShots.length === 0) {
+    if (!Array.isArray(detectedShots)) {
       console.error(
-        '[scanTarget] Shot detection failed – detector returned no usable shots'
+        '[scanTarget] Shot detection failed – detector returned invalid response'
       );
       return res.status(502).json({
         error:
           'Automatic shot detection failed. Please retake the photo so the target is clearly visible and try again.',
+      });
+    }
+
+    if (detectedShots.length === 0) {
+      console.warn(
+        '[scanTarget] Shot detection succeeded but no usable shots were detected'
+      );
+      return res.status(200).json({
+        message:
+          'The target image was processed successfully but no shots were detected. Please review the image and try again if necessary.',
+        shots: [],
       });
     }
 
