@@ -104,17 +104,42 @@ def detect_holes_in_mask(
 
     holes = []
     one_hole_area = np.pi * (pellet_radius_px ** 2)
+    max_holes_per_component = 10
 
     for i in range(1, num_labels):
         area = stats[i, cv2.CC_STAT_AREA]
         if area < 0.3 * one_hole_area:
             continue
 
-        x_c, y_c = centroids[i]
-        n_est = max(1, int(round(area / one_hole_area)))
+        component_mask = (labels == i).astype(np.uint8)
+        peaks = []
 
-        for _ in range(n_est):
-            holes.append((x_c, y_c))
+        if area > 1.5 * one_hole_area:
+            dist = cv2.distanceTransform(component_mask, cv2.DIST_L2, 5)
+            dist = dist.astype(np.float32)
+            dilated = cv2.dilate(dist, np.ones((3, 3), np.uint8))
+            min_peak_radius = max(1.0, pellet_radius_px * 0.45)
+            local_max = (
+                (dist >= min_peak_radius)
+                & np.isclose(dist, dilated, atol=1e-2)
+            )
+            peak_mask = np.zeros_like(component_mask, dtype=np.uint8)
+            peak_mask[local_max] = 1
+            num_peaks, _, _, peak_centroids = cv2.connectedComponentsWithStats(
+                peak_mask
+            )
+            for j in range(1, num_peaks):
+                px, py = peak_centroids[j]
+                peaks.append((px, py))
+
+        if not peaks:
+            x_c, y_c = centroids[i]
+            n_est = max(1, int(round(area / one_hole_area)))
+            n_est = min(n_est, max_holes_per_component)
+            peaks = [(x_c, y_c)] * n_est
+
+        for (px, py) in peaks:
+            holes.append((px, py))
 
     return holes, cnts
 
