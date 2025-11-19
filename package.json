@@ -8,7 +8,8 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "build": "npm run clean && npm install",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
+    "postinstall": "node util/installPythonDeps.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
