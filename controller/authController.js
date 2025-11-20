@@ -1,9 +1,13 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { OAuth2Client } from 'google-auth-library';
 import User from '../model/user.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-fallback-secret';
 const JWT_EXPIRES_IN = '7d';
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 const createTokenForUser = (user) =>
   jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
@@ -12,9 +16,37 @@ const publicUser = (user) => ({
   _id: user._id,
   username: user.username,
   email: user.email,
-  provider: user.provider,
+  googleId: user.googleId,
+  providers: user.providers,
   createdAt: user.createdAt,
 });
+
+const ensureProvider = (user, provider) => {
+  if (!user.providers) {
+    user.providers = [];
+  }
+  if (!user.providers.includes(provider)) {
+    user.providers.push(provider);
+  }
+};
+
+const verifyGoogleToken = async (idToken) => {
+  if (!GOOGLE_CLIENT_ID) {
+    throw new Error('GOOGLE_CLIENT_ID not configured');
+  }
+
+  const ticket = await googleClient.verifyIdToken({
+    idToken,
+    audience: GOOGLE_CLIENT_ID,
+  });
+
+  const payload = ticket.getPayload();
+
+  return {
+    googleId: payload.sub,
+    email: payload.email?.toLowerCase() || null,
+  };
+};
 
 // POST /pistol/auth/register
 export const registerUser = async (req, res) => {
@@ -27,14 +59,37 @@ export const registerUser = async (req, res) => {
       });
     }
 
-    const existing = await User.findOne({
-      $or: [{ email: email.toLowerCase() }, { username }],
-    });
+    const emailLower = email.toLowerCase();
 
-    if (existing) {
-      // Email or username already taken
+    let existingByEmail = await User.findOne({ email: emailLower });
+    if (existingByEmail) {
+      if (!existingByEmail.passwordHash) {
+        const passwordHash = await bcrypt.hash(password, 10);
+        existingByEmail.passwordHash = passwordHash;
+        ensureProvider(existingByEmail, 'local');
+        if (!existingByEmail.username) {
+          existingByEmail.username = username;
+        }
+        await existingByEmail.save();
+
+        const token = createTokenForUser(existingByEmail);
+
+        return res.status(200).json({
+          message: 'Password added to existing account',
+          user: publicUser(existingByEmail),
+          token,
+        });
+      }
+
       return res.status(409).json({
-        message: 'User already exists with this email or username',
+        message: 'User already exists with this email',
+      });
+    }
+
+    const existingByUsername = await User.findOne({ username });
+    if (existingByUsername) {
+      return res.status(409).json({
+        message: 'User already exists with this username',
       });
     }
 
@@ -42,9 +97,9 @@ export const registerUser = async (req, res) => {
 
     const user = await User.create({
       username,
-      email: email.toLowerCase(),
+      email: emailLower,
       passwordHash,
-      provider: 'password',
+      providers: ['local'],
     });
 
     const token = createTokenForUser(user);
@@ -75,16 +130,15 @@ export const loginUser = async (req, res) => {
 
     const user = await User.findOne({
       email: email.toLowerCase(),
-      provider: 'password',
     });
 
     if (!user || !user.passwordHash) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(400).json({ message: 'Invalid credentials' });
     }
 
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(400).json({ message: 'Invalid credentials' });
     }
 
     const token = createTokenForUser(user);
@@ -105,29 +159,38 @@ export const loginUser = async (req, res) => {
 // POST /pistol/auth/google
 export const googleAuth = async (req, res) => {
   try {
-    const { email, username, googleId } = req.body || {};
+    const { idToken } = req.body || {};
 
-    if (!email) {
-      return res.status(400).json({ message: 'email is required' });
+    if (!idToken) {
+      return res.status(400).json({ message: 'Google ID token is required' });
     }
 
-    let user =
-      (googleId && (await User.findOne({ googleId }))) ||
-      (await User.findOne({ email: email.toLowerCase() }));
+    const { googleId, email } = await verifyGoogleToken(idToken);
+
+    let user = await User.findOne({ googleId });
+
+    if (!user && email) {
+      user = await User.findOne({ email });
+      if (user) {
+        user.googleId = googleId;
+        if (email && !user.email) {
+          user.email = email;
+        }
+        ensureProvider(user, 'google');
+        await user.save();
+      }
+    }
 
     if (!user) {
-      // Create a new user from Google info
+      const generatedUsername = email
+        ? email.split('@')[0]
+        : `google_${googleId.slice(0, 6)}`;
       user = await User.create({
-        username: username || email,
-        email: email.toLowerCase(),
-        googleId: googleId || undefined,
-        provider: 'google',
+        username: generatedUsername,
+        email,
+        googleId,
+        providers: ['google'],
       });
-    } else if (!user.googleId && googleId) {
-      // Link existing password-based user to Google
-      user.googleId = googleId;
-      user.provider = user.provider || 'google';
-      await user.save();
     }
 
     const token = createTokenForUser(user);
@@ -140,6 +203,63 @@ export const googleAuth = async (req, res) => {
     console.error('Error in googleAuth:', error);
     return res.status(500).json({
       message: 'Failed to authenticate with Google',
+      error: error.message,
+    });
+  }
+};
+
+// POST /pistol/auth/link-google
+export const linkGoogleAccount = async (req, res) => {
+  try {
+    const { userId, idToken } = req.body || {};
+
+    if (!userId || !idToken) {
+      return res
+        .status(400)
+        .json({ message: 'userId and Google ID token are required' });
+    }
+
+    const { googleId, email } = await verifyGoogleToken(idToken);
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (user.googleId === googleId || user.providers?.includes('google')) {
+      return res.status(200).json({
+        message: 'Google account already linked',
+        alreadyLinked: true,
+        user: publicUser(user),
+      });
+    }
+
+    if (user.email && email && user.email.toLowerCase() !== email) {
+      return res.status(400).json({
+        message: 'Google email does not match the email of this account',
+      });
+    }
+
+    user.googleId = googleId;
+    if (email && !user.email) {
+      user.email = email;
+    }
+    ensureProvider(user, 'google');
+
+    await user.save();
+
+    const token = createTokenForUser(user);
+
+    return res.status(200).json({
+      message: 'Google account linked successfully',
+      alreadyLinked: false,
+      user: publicUser(user),
+      token,
+    });
+  } catch (error) {
+    console.error('Error in linkGoogleAccount:', error);
+    return res.status(500).json({
+      message: 'Failed to link Google account',
       error: error.message,
     });
   }
