@@ -3,6 +3,7 @@ import {
   registerUser,
   loginUser,
   googleAuth,
+  linkGoogleAccount,
 } from '../controller/authController.js';
 
 const router = express.Router();
@@ -21,5 +22,10 @@ router.post('/login', loginUser);
 // @route   POST /pistol/auth/google
 // @access  Public (for now)
 router.post('/google', googleAuth);
+
+// @desc    Link Google account to an existing user
+// @route   POST /pistol/auth/link-google
+// @access  Requires authentication (userId provided in body)
+router.post('/link-google', linkGoogleAccount);
 
 export default router;

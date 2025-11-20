@@ -30,10 +30,9 @@ const userSchema = new mongoose.Schema({
   },
 
   // NEW: remember how the account was created (dev, password, google)
-  provider: {
-    type: String,
-    enum: ['dev', 'password', 'google'],
-    default: 'dev',
+  providers: {
+    type: [String],
+    default: [],
   },
 
   createdAt: {
