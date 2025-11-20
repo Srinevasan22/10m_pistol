@@ -4,6 +4,7 @@ import {
   getAllUsers,
   getUserById,
   deleteUserById,
+  exportUserData,
 } from "../controller/userController.js";
 
 import { check, validationResult } from "express-validator";
@@ -36,6 +37,11 @@ router.post(
 // @route   GET /pistol/users
 // @access  Public
 router.get("/", getAllUsers);
+
+// @desc    Export all data for a user as CSV
+// @route   GET /pistol/users/:userId/export
+// @access  Public (for now)
+router.get("/:userId/export", exportUserData);
 
 // @desc    Get user by ID
 // @route   GET /pistol/users/:userId
