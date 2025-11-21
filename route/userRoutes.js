@@ -5,6 +5,7 @@ import {
   getUserById,
   deleteUserById,
   exportUserData,
+  updateUserById,
 } from "../controller/userController.js";
 
 import { check, validationResult } from "express-validator";
@@ -47,6 +48,11 @@ router.get("/:userId/export", exportUserData);
 // @route   GET /pistol/users/:userId
 // @access  Public
 router.get("/:userId", getUserById);
+
+// @desc    Update user by ID
+// @route   PUT /pistol/users/:userId
+// @access  Public
+router.put("/:userId", updateUserById);
 
 // @desc    Delete user by ID
 // @route   DELETE /pistol/users/:userId
