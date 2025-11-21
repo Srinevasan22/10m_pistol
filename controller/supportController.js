@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import User from "../model/user.js";
 
 /**
  * Reusable Nodemailer transporter.
@@ -33,10 +34,20 @@ export const sendSupportEmail = async (req, res) => {
     const trimmedEmail = email ? email.toString().trim() : "";
     const trimmedMessage = message ? message.toString().trim() : "";
 
+    // If no email is provided in the request body, try to pull it from the user record
+    let contactEmail = trimmedEmail;
+
+    if (!contactEmail && userId) {
+      const user = await User.findById(userId).lean();
+      if (user?.email) {
+        contactEmail = user.email.trim();
+      }
+    }
+
     const errors = [];
 
     // Email is required so support can reply
-    if (!trimmedEmail) {
+    if (!contactEmail) {
       errors.push(
         "An email address is required so we can reply to you. Please enter your email.",
       );
@@ -59,7 +70,7 @@ export const sendSupportEmail = async (req, res) => {
     const supportEmail = process.env.SUPPORT_EMAIL || "info@aimsight.app";
 
     const mailSubject = subject && subject.trim().length > 0
-      ? subject
+      ? subject.trim()
       : "AimSight Support Request";
 
     const mailText = `
@@ -68,17 +79,17 @@ A new support request has been submitted from the AimSight app.
 User details:
 - First name: ${firstName || "Not provided"}
 - Last name: ${lastName || "Not provided"}
-- Email: ${email}
+- Email: ${contactEmail || "Not provided"}
 - User ID: ${userId || "Not provided"}
 
 Message:
-${message}
+${trimmedMessage}
 `.trim();
 
     const mailOptions = {
       from: `"AimSight App" <${supportEmail}>`,
       to: supportEmail,
-      replyTo: email, // so you can reply directly to the user
+      replyTo: contactEmail || undefined, // so you can reply directly to the user
       subject: mailSubject,
       text: mailText,
     };
