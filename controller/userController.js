@@ -1,6 +1,7 @@
 import User from '../model/user.js';
 import Session from '../model/session.js';
 import Shot from '../model/shot.js';
+import bcrypt from 'bcryptjs';
 
 // Create a new user
 export const createUser = async (req, res) => {
@@ -64,6 +65,57 @@ export const deleteUserById = async (req, res) => {
   } catch (error) {
     console.error("Error deleting user:", error.message); // Log any errors
     res.status(500).json({ message: "Failed to delete user", error: error.message });
+  }
+};
+
+// Update user by ID
+export const updateUserById = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { username, email, googleId, providers, password } = req.body || {};
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (username !== undefined) {
+      user.username = username;
+    }
+
+    if (email !== undefined) {
+      user.email = email ? email.toLowerCase() : null;
+    }
+
+    if (googleId !== undefined) {
+      user.googleId = googleId || null;
+    }
+
+    if (Array.isArray(providers)) {
+      user.providers = providers;
+    }
+
+    if (password) {
+      user.passwordHash = await bcrypt.hash(password, 10);
+      if (!user.providers?.includes('local')) {
+        user.providers = [...(user.providers || []), 'local'];
+      }
+    }
+
+    const updatedUser = await user.save();
+    return res.status(200).json(updatedUser);
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({
+        message: "Username or email already exists. Please choose a different value.",
+      });
+    }
+
+    console.error("Error updating user:", error.message);
+    return res.status(500).json({
+      message: "Failed to update user",
+      error: error.message,
+    });
   }
 };
 
