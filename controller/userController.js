@@ -5,10 +5,17 @@ import bcrypt from 'bcryptjs';
 
 // Create a new user
 export const createUser = async (req, res) => {
-  const { username, createdAt } = req.body;
+  const { username, createdAt, firstName, lastName, email, dateOfBirth } = req.body;
 
   try {
-    const user = new User({ username, createdAt });
+    const user = new User({
+      username,
+      createdAt,
+      firstName,
+      lastName,
+      email: email ? email.toLowerCase() : undefined,
+      dateOfBirth,
+    });
     const newUser = await user.save();
     console.log("User created:", newUser); // Log the created user
     res.status(201).json(newUser);
@@ -72,7 +79,16 @@ export const deleteUserById = async (req, res) => {
 export const updateUserById = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { username, email, googleId, providers, password } = req.body || {};
+    const {
+      username,
+      email,
+      googleId,
+      providers,
+      password,
+      firstName,
+      lastName,
+      dateOfBirth,
+    } = req.body || {};
 
     const user = await User.findById(userId);
     if (!user) {
@@ -93,6 +109,18 @@ export const updateUserById = async (req, res) => {
 
     if (Array.isArray(providers)) {
       user.providers = providers;
+    }
+
+    if (firstName !== undefined) {
+      user.firstName = firstName;
+    }
+
+    if (lastName !== undefined) {
+      user.lastName = lastName;
+    }
+
+    if (dateOfBirth !== undefined) {
+      user.dateOfBirth = dateOfBirth || null;
     }
 
     if (password) {

@@ -8,6 +8,16 @@ const userSchema = new mongoose.Schema({
     trim: true,
   },
 
+  firstName: {
+    type: String,
+    trim: true,
+  },
+
+  lastName: {
+    type: String,
+    trim: true,
+  },
+
   // NEW: optional email for real login + Google
   email: {
     type: String,
@@ -38,6 +48,10 @@ const userSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now,
+  },
+
+  dateOfBirth: {
+    type: Date,
   },
 });
 
