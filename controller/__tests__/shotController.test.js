@@ -126,6 +126,42 @@ describe("shotController session statistics", () => {
     }
   });
 
+  it("assigns a randomized normalized position when none is provided", async () => {
+    const randomSpy = jest
+      .spyOn(Math, "random")
+      .mockReturnValueOnce(0.6) // jitter
+      .mockReturnValueOnce(0.25); // angle
+
+    const req = {
+      params: {
+        sessionId: session._id.toString(),
+        userId: userId.toString(),
+      },
+      body: {
+        score: 9,
+        targetNumber: 1,
+      },
+    };
+
+    const res = createMockResponse();
+
+    try {
+      await addShot(req, res);
+    } finally {
+      randomSpy.mockRestore();
+    }
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(typeof res.body.positionX).toBe("number");
+    expect(typeof res.body.positionY).toBe("number");
+    expect(Math.abs(res.body.positionX)).toBeLessThanOrEqual(1);
+    expect(Math.abs(res.body.positionY)).toBeLessThanOrEqual(1);
+
+    const savedShot = await Shot.findOne({ sessionId: session._id });
+    expect(savedShot.positionX).toBeCloseTo(res.body.positionX);
+    expect(savedShot.positionY).toBeCloseTo(res.body.positionY);
+  });
+
   it("persists target metadata when adding a shot", async () => {
     const metadata = {
       targetIndex: 1,

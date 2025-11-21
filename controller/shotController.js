@@ -16,6 +16,14 @@ const DEFAULT_SCORING_MODE = "classic";
 const MIN_INPUT_SCORE = 0;
 const MAX_INPUT_SCORE = 10.9;
 
+const clamp = (value, min, max) => {
+  if (Number.isNaN(value)) {
+    return min;
+  }
+
+  return Math.min(Math.max(value, min), max);
+};
+
 const clampScoreInput = (value) => {
   if (value === null || value === undefined) {
     return null;
@@ -54,6 +62,49 @@ const deriveRingScoreFromDecimal = (value) => {
   }
 
   return floored;
+};
+
+const buildRandomizedPositionFromScore = ({ score, config }) => {
+  if (typeof score !== "number" || Number.isNaN(score)) {
+    return null;
+  }
+
+  const safeConfig = config ?? PISTOL_10M_CONFIG;
+  const ringScore = deriveRingScoreFromDecimal(score);
+
+  const ring = Array.isArray(safeConfig?.rings)
+    ? safeConfig.rings.find((entry) => entry?.ring === ringScore)
+    : null;
+
+  if (!ring || typeof ring.outerRadius !== "number") {
+    return null;
+  }
+
+  const outerRadius = ring.outerRadius;
+  const innerRadius =
+    typeof ring.innerRadius === "number" && ring.innerRadius >= 0
+      ? ring.innerRadius
+      : 0;
+
+  const targetOuterRadius =
+    typeof safeConfig?.outerRadius === "number" && safeConfig.outerRadius > 0
+      ? safeConfig.outerRadius
+      : outerRadius;
+
+  const ringSpan = Math.max(outerRadius - innerRadius, 0);
+  const normalizedRatio = clamp((score - ringScore) / 0.9, 0, 1);
+
+  const baseRadius = outerRadius - normalizedRatio * ringSpan;
+  const jitter = (Math.random() - 0.5) * 0.4 * ringSpan;
+  const radius = clamp(baseRadius + jitter, innerRadius, outerRadius);
+
+  const normalizedRadius = clamp(radius / targetOuterRadius, 0, 1);
+  const angle = Math.random() * 2 * Math.PI;
+
+  return {
+    positionX: normalizedRadius * Math.cos(angle),
+    positionY: normalizedRadius * Math.sin(angle),
+  };
 };
 
 const buildManualScoreMetadata = (inputScore) => {
@@ -339,6 +390,14 @@ export const addShot = async (req, res) => {
       "positionY",
     );
 
+    const defaultPosition =
+      !hasPositionX && !hasPositionY
+        ? buildRandomizedPositionFromScore({
+            score: manualScoreMetadata.decimalScore,
+            config: PISTOL_10M_CONFIG,
+          })
+        : null;
+
     const normalizedPositionX = hasPositionX
       ? typeof positionX === "number"
         ? positionX
@@ -357,8 +416,16 @@ export const addShot = async (req, res) => {
       sessionId,
       userId,
       targetId: target._id,
-      ...(hasPositionX ? { positionX: normalizedPositionX } : {}),
-      ...(hasPositionY ? { positionY: normalizedPositionY } : {}),
+      ...(hasPositionX
+        ? { positionX: normalizedPositionX }
+        : defaultPosition
+          ? { positionX: defaultPosition.positionX }
+          : {}),
+      ...(hasPositionY
+        ? { positionY: normalizedPositionY }
+        : defaultPosition
+          ? { positionY: defaultPosition.positionY }
+          : {}),
       ...(timestamp !== undefined ? { timestamp } : {}),
     });
 
