@@ -29,10 +29,30 @@ export const sendSupportEmail = async (req, res) => {
       message,
     } = req.body;
 
-    // Basic validation (keep it simple for now)
-    if (!email || !message) {
+    // Trim values to avoid "   " being accepted
+    const trimmedEmail = email ? email.toString().trim() : "";
+    const trimmedMessage = message ? message.toString().trim() : "";
+
+    const errors = [];
+
+    // Email is required so support can reply
+    if (!trimmedEmail) {
+      errors.push(
+        "An email address is required so we can reply to you. Please enter your email.",
+      );
+    }
+
+    // Message is also required
+    if (!trimmedMessage) {
+      errors.push(
+        "A message is required. Please describe the issue you are experiencing.",
+      );
+    }
+
+    if (errors.length > 0) {
       return res.status(400).json({
-        message: "Email and message are required.",
+        message: "Support request could not be sent.",
+        errors, // array of detailed messages for the app / logs
       });
     }
 
