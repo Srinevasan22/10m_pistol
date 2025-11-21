@@ -8,6 +8,7 @@ const userSchema = new mongoose.Schema({
     trim: true,
   },
 
+  // Profile fields
   firstName: {
     type: String,
     trim: true,
@@ -25,6 +26,10 @@ const userSchema = new mongoose.Schema({
     lowercase: true,
     unique: true,
     sparse: true, // allows multiple null/undefined
+  },
+
+  dateOfBirth: {
+    type: Date,
   },
 
   // NEW: hashed password for email/password accounts
@@ -48,10 +53,6 @@ const userSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now,
-  },
-
-  dateOfBirth: {
-    type: Date,
   },
 });
 

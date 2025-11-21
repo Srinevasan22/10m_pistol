@@ -120,7 +120,7 @@ export const updateUserById = async (req, res) => {
     }
 
     if (dateOfBirth !== undefined) {
-      user.dateOfBirth = dateOfBirth || null;
+      user.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
     }
 
     if (password) {

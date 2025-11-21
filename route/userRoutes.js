@@ -50,6 +50,11 @@ router.get("/:userId/export", exportUserData);
 router.get("/:userId", getUserById);
 
 // @desc    Update user by ID
+// @route   PATCH /pistol/users/:userId
+// @access  Public
+router.patch("/:userId", updateUserById);
+
+// @desc    Update user by ID
 // @route   PUT /pistol/users/:userId
 // @access  Public
 router.put("/:userId", updateUserById);
