@@ -10,6 +10,7 @@ import {
 import Shot from "../model/shot.js"; // Correct import of Shot model
 import { check, validationResult } from "express-validator";
 import mongoose from "mongoose"; // Import for ObjectId validation
+import { getRandomPositionForScore } from "../util/issfPosition.js";
 
 const hasTargetNumberInput = (body = {}) => {
   const targetNumberKeys = [
@@ -29,6 +30,26 @@ const hasTargetNumberInput = (body = {}) => {
     )
   );
 };
+
+router.use((req, res, next) => {
+  if ((req.method === "POST" || req.method === "PUT") && req.body?.score !== undefined) {
+    const hasPositionX = Object.prototype.hasOwnProperty.call(req.body, "positionX");
+    const hasPositionY = Object.prototype.hasOwnProperty.call(req.body, "positionY");
+
+    if (!hasPositionX && !hasPositionY) {
+      const { x, y } = getRandomPositionForScore(req.body.score);
+      req.body.positionX = x;
+      req.body.positionY = y;
+    } else {
+      req.body.positionX = req.body.positionX ?? 0;
+      req.body.positionY = req.body.positionY ?? 0;
+    }
+
+    req.body.timestamp = req.body.timestamp ?? new Date().toISOString();
+  }
+
+  next();
+});
 
 // Middleware to validate ObjectId
 const validateObjectId = (paramName) => {
