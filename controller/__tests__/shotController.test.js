@@ -162,6 +162,33 @@ describe("shotController session statistics", () => {
     expect(savedShot.positionY).toBeCloseTo(res.body.positionY);
   });
 
+  it("computes the score from coordinates when manual input is omitted", async () => {
+    const req = {
+      params: {
+        sessionId: session._id.toString(),
+        userId: userId.toString(),
+      },
+      body: {
+        positionX: 0,
+        positionY: 0.2,
+        targetNumber: 1,
+      },
+    };
+
+    const res = createMockResponse();
+
+    await addShot(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.body.score).toBe(8);
+    expect(res.body.ringScore).toBe(8);
+    expect(res.body.scoreSource).toBe("computed");
+
+    const updatedSession = await Session.findById(session._id);
+    expect(updatedSession.totalShots).toBe(1);
+    expect(updatedSession.averageScore).toBe(8);
+  });
+
   it("persists target metadata when adding a shot", async () => {
     const metadata = {
       targetIndex: 1,
