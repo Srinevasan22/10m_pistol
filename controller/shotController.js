@@ -11,6 +11,7 @@ import {
   roundToSingleDecimal,
 } from "../util/scoring.js";
 import { PISTOL_10M_CONFIG } from "../util/scoringConfig.js";
+import { getRandomPositionForScore } from "../util/issfPosition.js";
 
 const DEFAULT_SCORING_MODE = "classic";
 const MIN_INPUT_SCORE = 0;
@@ -65,6 +66,14 @@ const deriveRingScoreFromDecimal = (value) => {
 };
 
 const buildRandomizedPositionFromScore = ({ score, config }) => {
+  if (typeof score === "number" && !Number.isNaN(score)) {
+    const normalized = getRandomPositionForScore(score);
+
+    if (normalized && typeof normalized.x === "number" && typeof normalized.y === "number") {
+      return { positionX: normalized.x, positionY: normalized.y };
+    }
+  }
+
   if (typeof score !== "number" || Number.isNaN(score)) {
     return null;
   }
