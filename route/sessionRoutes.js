@@ -154,4 +154,34 @@ router.post(
   scanTargetAndCreateShots,
 );
 
+// DEBUG: dump raw shots for a session (do not expose in production docs)
+router.get('/:sessionId/shots-debug/raw', async (req, res) => {
+  try {
+    const Shot = (await import('../model/shot.js')).default;
+    const shots = await Shot.find({
+      sessionId: req.params.sessionId,
+      userId: req.params.userId,
+    });
+
+    res.json(
+      shots.map((s) =>
+        s.debugInfo
+          ? s.debugInfo()
+          : {
+              id: s._id.toString(),
+              sessionId: s.sessionId.toString(),
+              userId: s.userId.toString(),
+              score: s.score,
+              positionX: s.positionX,
+              positionY: s.positionY,
+              timestamp: s.timestamp,
+            },
+      ),
+    );
+  } catch (error) {
+    console.error('[shots-debug] error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

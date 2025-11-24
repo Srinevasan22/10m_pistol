@@ -69,6 +69,18 @@ const shotSchema = new mongoose.Schema({
   }
 });
 
+shotSchema.methods.debugInfo = function () {
+  return {
+    id: this._id.toString(),
+    sessionId: this.sessionId.toString(),
+    userId: this.userId.toString(),
+    score: this.score,
+    positionX: this.positionX,
+    positionY: this.positionY,
+    timestamp: this.timestamp,
+  };
+};
+
 // Correctly export Shot as the default export
 const Shot = mongoose.model('Shot', shotSchema);
 export default Shot;
