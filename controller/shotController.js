@@ -329,6 +329,16 @@ export const addShot = async (req, res) => {
         .json({ error: "Invalid session or user identifier" });
     }
 
+    console.log("Received request body:", req.body);
+    console.log(
+      "[addShot] incoming score:",
+      req.body.score,
+      "posX:",
+      req.body.positionX,
+      "posY:",
+      req.body.positionY,
+    );
+
     const normalizedBody = normalizeTargetMetadata(req.body);
     const {
       positionX,
@@ -463,6 +473,15 @@ export const addShot = async (req, res) => {
 
     await shot.save();
 
+    console.log("[addShot] stored shot:", {
+      id: shot._id.toString(),
+      sessionId: shot.sessionId.toString(),
+      userId: shot.userId.toString(),
+      score: shot.score,
+      positionX: shot.positionX,
+      positionY: shot.positionY,
+    });
+
     target.shots.push(shot._id);
     await target.save();
 
@@ -508,6 +527,19 @@ export const getShotsBySession = async (req, res) => {
         path: "shots",
         options: { sort: { timestamp: 1 } },
       });
+
+    const shotSummaries = targets.flatMap((target) =>
+      (target.shots || []).map((s) => ({
+        id: s._id.toString(),
+        sessionId: s.sessionId.toString(),
+        userId: s.userId.toString(),
+        score: s.score,
+        positionX: s.positionX,
+        positionY: s.positionY,
+      })),
+    );
+
+    console.log("[getShotsBySession] returning shots:", shotSummaries);
 
     res.json(targets);
   } catch (error) {
