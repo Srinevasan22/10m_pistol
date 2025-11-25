@@ -2,7 +2,7 @@
 import sys
 import json
 from dataclasses import dataclass
-from typing import Iterable, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -84,6 +84,21 @@ BACKGROUND_SWATCHES: Tuple[ColourRule, ...] = (
     ),
 )
 
+# ISSF 10m air pistol scoring ring radii in millimetres.
+ISSF_AIR_PISTOL_RING_RADII_MM = {
+    10: 5.75,
+    9: 13.75,
+    8: 21.75,
+    7: 29.75,
+    6: 37.75,
+    5: 45.75,
+    4: 53.75,
+    3: 61.75,
+    2: 69.75,
+    1: 77.75,
+}
+MAX_RADIUS_MM = ISSF_AIR_PISTOL_RING_RADII_MM[1]
+
 
 def stack_masks(masks: Iterable[np.ndarray]) -> np.ndarray:
     mask = None
@@ -92,6 +107,80 @@ def stack_masks(masks: Iterable[np.ndarray]) -> np.ndarray:
     if mask is None:
         mask = np.zeros((1, 1), dtype=np.uint8)
     return mask
+
+
+def load_image(path: str) -> np.ndarray:
+    img = cv2.imread(path)
+    if img is None:
+        raise RuntimeError(f"Could not read image: {path}")
+    return img
+
+
+def resize_if_needed(img: np.ndarray, max_dim: int = 1600) -> np.ndarray:
+    h, w = img.shape[:2]
+    if max(h, w) <= max_dim:
+        return img
+
+    scale = max_dim / float(max(h, w))
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+    return cv2.resize(img, (new_w, new_h))
+
+
+def order_corners(corners: np.ndarray) -> np.ndarray:
+    """Return corners ordered as TL, TR, BR, BL."""
+    rect = np.zeros((4, 2), dtype="float32")
+    s = corners.sum(axis=1)
+    rect[0] = corners[np.argmin(s)]
+    rect[2] = corners[np.argmax(s)]
+
+    diff = np.diff(corners, axis=1)
+    rect[1] = corners[np.argmin(diff)]
+    rect[3] = corners[np.argmax(diff)]
+    return rect
+
+
+def find_paper_corners(image: np.ndarray) -> Optional[np.ndarray]:
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blur, 50, 150)
+
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None
+
+    contours = sorted(contours, key=cv2.contourArea, reverse=True)
+    for cnt in contours:
+        peri = cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+        if len(approx) == 4:
+            return order_corners(approx.reshape(4, 2))
+    return None
+
+
+def warp_to_top_down(image: np.ndarray, corners: np.ndarray, size: int = 1000) -> np.ndarray:
+    dst_pts = np.float32([[0, 0], [size, 0], [size, size], [0, size]])
+    src_pts = np.float32(corners)
+    M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+    return cv2.warpPerspective(image, M, (size, size))
+
+
+def preprocess_image(img: np.ndarray) -> dict:
+    resized = resize_if_needed(img)
+    corners = find_paper_corners(resized)
+    img_flat = warp_to_top_down(resized, corners) if corners is not None else resized
+
+    gray = cv2.cvtColor(img_flat, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    hsv = cv2.cvtColor(img_flat, cv2.COLOR_BGR2HSV)
+
+    return {
+        "img": img_flat,
+        "gray": gray,
+        "blur": blur,
+        "hsv": hsv,
+        "corners": corners,
+    }
 
 
 def build_marker_mask(hsv_img: np.ndarray) -> np.ndarray:
@@ -129,6 +218,180 @@ def build_marker_mask(hsv_img: np.ndarray) -> np.ndarray:
     return clean_mask
 
 
+def detect_target_center_and_scale(processed: dict) -> Tuple[float, float, float, float]:
+    gray = processed["gray"]
+    blur = processed["blur"]
+    h, w = gray.shape[:2]
+
+    circles = cv2.HoughCircles(
+        blur,
+        cv2.HOUGH_GRADIENT,
+        dp=1.2,
+        minDist=min(h, w) / 4,
+        param1=100,
+        param2=30,
+        minRadius=int(min(h, w) * 0.15),
+        maxRadius=int(min(h, w) * 0.35),
+    )
+
+    if circles is None:
+        log("No circle found, using fallback center/radius")
+        cx, cy = w / 2.0, h / 2.0
+        target_r = min(h, w) * 0.35
+    else:
+        circles = np.round(circles[0, :]).astype("int")
+        img_cx, img_cy = w / 2.0, h / 2.0
+        chosen = min(circles, key=lambda c: (c[0] - img_cx) ** 2 + (c[1] - img_cy) ** 2)
+        cx, cy, target_r = float(chosen[0]), float(chosen[1]), float(chosen[2])
+        log(f"Detected circle center=({cx:.1f},{cy:.1f}), r={target_r:.1f}")
+
+    pixels_per_mm = target_r / MAX_RADIUS_MM
+    return cx, cy, pixels_per_mm, target_r
+
+
+def detect_target_geometry(processed: dict) -> dict:
+    cx, cy, pixels_per_mm, target_r = detect_target_center_and_scale(processed)
+    return {
+        "center_x": cx,
+        "center_y": cy,
+        "pixels_per_mm": pixels_per_mm,
+        "target_radius_px": target_r,
+    }
+
+
+def detect_shots(processed: dict, geom: dict) -> List[dict]:
+    img = processed["img"]
+    blur = processed["blur"]
+    hsv = processed["hsv"]
+
+    cx = geom["center_x"]
+    cy = geom["center_y"]
+    target_r = geom["target_radius_px"]
+
+    combined_mask = build_marker_mask(hsv)
+
+    contours = []
+    cnts, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if cnts:
+        contours = cnts
+        largest = max(cv2.contourArea(c) for c in contours)
+        target_area = np.pi * (target_r ** 2)
+        if largest > target_area * 0.6:
+            log("Colour mask latched onto the whole target; discarding and trying grayscale")
+            contours = []
+
+    if not contours:
+        log("Colour mask failed; falling back to bright grayscale threshold")
+        for thr in [250, 245, 240]:
+            _, bright = cv2.threshold(blur, thr, 255, cv2.THRESH_BINARY)
+            cnts, _ = cv2.findContours(bright, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if len(cnts) >= 3:
+                contours = cnts
+                break
+
+    if not contours:
+        log("Bright markers not found; searching for dark pellet holes with adaptive threshold")
+        for block_size in [11, 15, 21]:
+            dark = cv2.adaptiveThreshold(
+                blur,
+                255,
+                cv2.ADAPTIVE_THRESH_MEAN_C,
+                cv2.THRESH_BINARY_INV,
+                block_size,
+                5,
+            )
+            dark = cv2.medianBlur(dark, 5)
+            cnts, _ = cv2.findContours(dark, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if len(cnts) >= 3:
+                contours = cnts
+                break
+
+    if not contours:
+        log("No bright or dark blobs found for shots")
+        contours = []
+
+    shots: List[dict] = []
+
+    min_area = (target_r ** 2) * MIN_AREA_FACTOR
+    max_area = (target_r ** 2) * MAX_AREA_FACTOR
+
+    if contours:
+        log(
+            f"Found {len(contours)} potential blobs before filtering (area range {min_area:.1f}-{max_area:.1f})"
+        )
+
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if area < min_area or area > max_area:
+            continue
+
+        (x, y), radius = cv2.minEnclosingCircle(cnt)
+        dist_center = np.hypot(x - cx, y - cy)
+
+        if dist_center > target_r * 1.5:
+            continue
+
+        shots.append({"x_px": float(x), "y_px": float(y), "contour_radius": float(radius)})
+
+    processed["last_contours"] = contours
+    return shots
+
+
+def compute_score_for_radius_mm(r_mm: float) -> float:
+    for score in range(10, 0, -1):
+        ring_r = ISSF_AIR_PISTOL_RING_RADII_MM[score]
+        if r_mm <= ring_r:
+            return float(score)
+    return 0.0
+
+
+def score_shots(shots: List[dict], geom: dict) -> List[dict]:
+    cx = geom["center_x"]
+    cy = geom["center_y"]
+    ppm = geom["pixels_per_mm"]
+
+    scored: List[dict] = []
+    target_r_px = ppm * MAX_RADIUS_MM
+
+    for shot in shots:
+        dx_px = shot["x_px"] - cx
+        dy_px = shot["y_px"] - cy
+
+        r_px = (dx_px ** 2 + dy_px ** 2) ** 0.5
+        r_mm = r_px / ppm if ppm else 0.0
+
+        score = compute_score_for_radius_mm(r_mm)
+
+        r_norm = r_mm / MAX_RADIUS_MM if MAX_RADIUS_MM else 0.0
+        x_norm = (dx_px / ppm) / MAX_RADIUS_MM if ppm else 0.0
+        y_norm = (dy_px / ppm) / MAX_RADIUS_MM if ppm else 0.0
+
+        scored.append(
+            {
+                "x_px": shot["x_px"],
+                "y_px": shot["y_px"],
+                "x_norm": x_norm,
+                "y_norm": y_norm,
+                "r_mm": r_mm,
+                "score": score,
+                "target_radius_px": target_r_px,
+            }
+        )
+
+    scored.sort(key=lambda s: s.get("r_mm", 0.0))
+    return scored
+
+
+def format_output(scored_shots: List[dict]) -> dict:
+    return {
+        "shots": [
+            {"x": s.get("x_norm", 0.0), "y": s.get("y_norm", 0.0), "score": s.get("score", 0.0)}
+            for s in scored_shots
+        ],
+        "count": len(scored_shots),
+    }
+
+
 def save_debug_image(
     img,
     cx: float,
@@ -162,9 +425,12 @@ def save_debug_image(
 
         # 3) Draw accepted shots (red), using normalized coordinates
         for s in shots:
-            # convert from normalized [-1,1] back to pixel coordinates
-            x_px = int(cx + s["positionX"] * target_r)
-            y_px = int(cy + s["positionY"] * target_r)
+            x_norm = s.get("x_norm")
+            y_norm = s.get("y_norm")
+            if x_norm is None or y_norm is None:
+                continue
+            x_px = int(cx + x_norm * target_r)
+            y_px = int(cy + y_norm * target_r)
             cv2.circle(
                 debug,
                 (x_px, y_px),
@@ -187,208 +453,31 @@ def save_debug_image(
         log("Failed to save debug image:", e)
 
 
-def detect_shots(image_path: str):
-    """
-    v1.1 detector tuned for white patches on a 10m pistol target image:
-    - load image
-    - detect main circular target (outer scoring ring)
-    - detect bright circular spots (white shots)
-    - return list of {score, positionX, positionY},
-      with normalized coords in [-1, 1] relative to target center.
-    """
-    # --- 1. Load image ---
-    img = cv2.imread(image_path)
-    if img is None:
-        raise RuntimeError(f"Could not read image: {image_path}")
-
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    h, w = gray.shape[:2]
-
-    # Optional: downscale very large images to speed up processing
-    max_dim = max(h, w)
-    if max_dim > 1600:
-        scale = 1600.0 / max_dim
-        new_w = int(w * scale)
-        new_h = int(h * scale)
-        img = cv2.resize(img, (new_w, new_h))
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        h, w = gray.shape[:2]
-
-    blur = cv2.GaussianBlur(gray, (5, 5), 0)
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-
-    # --- 2. Detect main circular target (outer ring) ---
-    # We choose the circle whose center is closest to image center,
-    # with a plausible radius range.
-    circles = cv2.HoughCircles(
-        blur,
-        cv2.HOUGH_GRADIENT,
-        dp=1.2,
-        minDist=min(h, w) / 4,
-        param1=100,
-        param2=30,
-        minRadius=int(min(h, w) * 0.15),
-        maxRadius=int(min(h, w) * 0.35),
-    )
-
-    if circles is None:
-        # Fallback: use image center and radius based on size
-        log("No circle found, using fallback center/radius")
-        cx, cy = w / 2.0, h / 2.0
-        target_r = min(h, w) * 0.35
-    else:
-        circles = np.round(circles[0, :]).astype("int")
-        img_cx, img_cy = w / 2.0, h / 2.0
-        # choose the circle whose center is closest to the image center
-        chosen = min(
-            circles,
-            key=lambda c: (c[0] - img_cx) ** 2 + (c[1] - img_cy) ** 2,
-        )
-        cx, cy, target_r = float(chosen[0]), float(chosen[1]), float(chosen[2])
-        log(f"Detected circle center=({cx:.1f},{cy:.1f}), r={target_r:.1f}")
-
-    # --- 3. Detect high-contrast spots (white or coloured shots) ---
-    # Strategy: start with colour-aware masks that mirror the "bright white or
-    # saturated neon" guidance shared with users. Each range corresponds to the
-    # bright markers listed in docs/DETECTION_NOTES.md. We also strip out beige
-    # and near-black backgrounds so coloured bench mats only register when they
-    # are truly neon or metallic.
-    combined_mask = build_marker_mask(hsv)
-
-    contours = []
-    cnts, _ = cv2.findContours(
-        combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
-    if cnts:
-        contours = cnts
-        largest = max(cv2.contourArea(c) for c in contours)
-        target_area = np.pi * (target_r ** 2)
-        if largest > target_area * 0.6:
-            log(
-                "Colour mask latched onto the whole target; discarding and trying grayscale"
-            )
-            contours = []
-
-    if not contours:
-        log("Colour mask failed; falling back to bright grayscale threshold")
-        for thr in [250, 245, 240]:
-            _, bright = cv2.threshold(blur, thr, 255, cv2.THRESH_BINARY)
-            cnts, _ = cv2.findContours(
-                bright, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
-            if len(cnts) >= 3:
-                contours = cnts
-                break
-
-    # Many shooters do not place white pasters on every hole; when both colour
-    # and bright-threshold detection fail we attempt to find the *dark* pellet
-    # holes directly.  This keeps the script useful for default targets instead
-    # of bailing out and returning an empty shot list (which causes the Node
-    # layer to drop back to fake detections).
-    if not contours:
-        log(
-            "Bright markers not found; searching for dark pellet holes with adaptive threshold"
-        )
-        for block_size in [11, 15, 21]:
-            dark = cv2.adaptiveThreshold(
-                blur,
-                255,
-                cv2.ADAPTIVE_THRESH_MEAN_C,
-                cv2.THRESH_BINARY_INV,
-                block_size,
-                5,
-            )
-            dark = cv2.medianBlur(dark, 5)
-            cnts, _ = cv2.findContours(
-                dark, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
-            if len(cnts) >= 3:
-                contours = cnts
-                break
-
-    if not contours:
-        log("No bright or dark blobs found for shots")
-        contours = []
-
-    shots = []
-
-    # Area thresholds relative to target size:
-    # for your sample image, shots are ~1600 px area.
-    min_area = (target_r ** 2) * MIN_AREA_FACTOR
-    max_area = (target_r ** 2) * MAX_AREA_FACTOR
-
-    if contours:
-        log(
-            f"Found {len(contours)} potential blobs before filtering (area range {min_area:.1f}-{max_area:.1f})"
-        )
-
-    for cnt in contours:
-        area = cv2.contourArea(cnt)
-        if area < min_area or area > max_area:
-            continue
-
-        (x, y), radius = cv2.minEnclosingCircle(cnt)
-
-        # distance from target center
-        dist_center = np.hypot(x - cx, y - cy)
-
-        # Only ignore absolutely crazy far blobs
-        if dist_center > target_r * 1.5:
-            continue
-
-        # --- 4. Normalize coordinates to [-1, 1] ---
-        # x: left (-1) to right (+1), y: top (-1) to bottom (+1)
-        norm_x = (x - cx) / target_r
-        norm_y = (y - cy) / target_r
-
-        # --- 5. Scoring based on distance ratio ---
-        ratio = dist_center / target_r
-
-        if ratio <= 1.0:
-            # Inside target: linear mapping center=10, edge=1
-            ratio_clamped = max(0.0, min(1.0, ratio))
-            score = 10.0 - 9.0 * ratio_clamped
-        else:
-            # Outside official scoring rings → score 0
-            score = 0.0
-
-        score = round(float(score), 1)
-
-        shots.append(
-            {
-                "score": float(score),
-                "positionX": float(norm_x),
-                "positionY": float(norm_y),
-            }
-        )
-
-    # sort inner to outer
-    shots.sort(key=lambda s: abs(s["score"] - 10.0))
-
-    # --- 6. Save debug image with circles, contours, and shot dots ---
-    save_debug_image(
-        img=img,
-        cx=cx,
-        cy=cy,
-        target_r=target_r,
-        contours=contours,
-        shots=shots,
-        image_path=image_path,
-    )
-
-    log(f"Returning {len(shots)} detected shots")
-    return shots
-
-
 def main():
     if len(sys.argv) < 2:
         print("Usage: detect_shots.py <image_path>", file=sys.stderr)
         sys.exit(1)
 
-    image_path = sys.argv[0 if False else 1]  # keep simple
+    image_path = sys.argv[1]
     try:
-        shots = detect_shots(image_path)
-        result = {"shots": shots}
+        raw_img = load_image(image_path)
+        processed = preprocess_image(raw_img)
+        geom = detect_target_geometry(processed)
+        shot_candidates = detect_shots(processed, geom)
+        scored_shots = score_shots(shot_candidates, geom)
+
+        save_debug_image(
+            img=processed["img"],
+            cx=geom["center_x"],
+            cy=geom["center_y"],
+            target_r=geom["pixels_per_mm"] * MAX_RADIUS_MM,
+            contours=processed.get("last_contours", []),
+            shots=scored_shots,
+            image_path=image_path,
+        )
+
+        result = format_output(scored_shots)
+        log(f"Returning {len(result['shots'])} detected shots")
         print(json.dumps(result))
     except Exception as e:
         log("Error in detect_shots:", e)

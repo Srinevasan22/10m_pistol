@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
 import path from 'path';
-import { spawn } from 'child_process';
+import { execFile } from 'child_process';
 import fs from 'fs/promises';
+import sharp from 'sharp';
 import Session from '../model/session.js';
 import Shot from '../model/shot.js';
 import Target from '../model/target.js';
@@ -56,59 +57,61 @@ const safeDeleteFile = async (filePath) => {
   }
 };
 
+const MIN_IMAGE_BYTES = 15_000;
+const MIN_IMAGE_WIDTH = 600;
+const MIN_IMAGE_HEIGHT = 600;
+
+const validateImageQuality = async ({ filePath, size }) => {
+  if (!filePath) {
+    throw new Error('No file provided');
+  }
+
+  if (typeof size === 'number' && size < MIN_IMAGE_BYTES) {
+    throw new Error('Image file is too small to scan reliably');
+  }
+
+  const metadata = await sharp(filePath).metadata();
+
+  if (!metadata?.width || !metadata?.height) {
+    throw new Error('Unable to read image dimensions');
+  }
+
+  if (metadata.width < MIN_IMAGE_WIDTH || metadata.height < MIN_IMAGE_HEIGHT) {
+    throw new Error('Image dimensions are too low for detection');
+  }
+};
+
 const runOpenCvDetector = (imagePath) => {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     try {
       const scriptPath = path.join(process.cwd(), 'python', 'detect_shots.py');
       console.log('[scanTarget] Running OpenCV detector:', scriptPath, imagePath);
 
-      const py = spawn('python3', [scriptPath, imagePath]);
-
-      let stdout = '';
-      let stderr = '';
-
-      py.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      py.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      py.on('close', (code) => {
-        if (stderr.trim()) {
+      execFile('python3', [scriptPath, imagePath], (error, stdout, stderr) => {
+        if (stderr?.trim()) {
           console.warn('[OpenCV detector stderr]:', stderr.trim());
         }
-        console.log('[OpenCV detector exited with code]', code);
 
-        if (!stdout.trim()) {
-          console.warn('[OpenCV detector] No stdout, returning []');
-          return resolve([]);
+        if (error) {
+          console.error('[OpenCV detector] Process error:', error.message);
+          return reject(error);
+        }
+
+        if (!stdout?.trim()) {
+          return reject(new Error('Detector returned no output'));
         }
 
         try {
           const parsed = JSON.parse(stdout);
-          if (Array.isArray(parsed)) {
-            return resolve(parsed);
-          }
-          if (Array.isArray(parsed.shots)) {
-            return resolve(parsed.shots);
-          }
-          console.warn('[OpenCV detector] Parsed JSON has no shots array');
-          return resolve([]);
+          return resolve(parsed);
         } catch (err) {
           console.error('Failed to parse OpenCV detector JSON:', err.message);
-          return resolve([]);
+          return reject(err);
         }
-      });
-
-      py.on('error', (err) => {
-        console.error('Failed to start python3 detector:', err.message);
-        return resolve([]);
       });
     } catch (err) {
       console.error('runOpenCvDetector error:', err.message);
-      resolve([]);
+      reject(err);
     }
   });
 };
@@ -176,10 +179,35 @@ export const scanTargetAndCreateShots = async (req, res) => {
 
     const scoringMode = normalizeScoringMode(session?.scoringMode);
 
+    try {
+      await validateImageQuality({
+        filePath: req.file?.path,
+        size: req.file?.size,
+      });
+    } catch (qualityError) {
+      console.warn('[scanTarget] Image quality check failed:', qualityError.message);
+      return res.status(400).json({
+        error:
+          'Image quality too low. Please retake the photo closer to the target with good lighting.',
+      });
+    }
+
     const normalizedImagePath = normalizeToUploadsPath(imagePath);
     const debugImagePath = buildDebugImagePath(normalizedImagePath);
 
-    const detectedShots = await runOpenCvDetector(imagePath);
+    let detectorOutput;
+    try {
+      detectorOutput = await runOpenCvDetector(imagePath);
+    } catch (detectorError) {
+      console.error('[scanTarget] Shot detection failed:', detectorError.message);
+      return res.status(502).json({
+        error: 'Shot detection failed. Please try again with a clearer target photo.',
+      });
+    }
+
+    const detectedShots = Array.isArray(detectorOutput)
+      ? detectorOutput
+      : detectorOutput?.shots;
     console.log(
       `[scanTarget] OpenCV detector returned ${detectedShots?.length || 0} shots`
     );
@@ -231,13 +259,17 @@ export const scanTargetAndCreateShots = async (req, res) => {
 
     for (const detectedShot of detectedShots) {
       const normalizedPositionX =
-        typeof detectedShot.positionX === 'number'
-          ? detectedShot.positionX
-          : Number(detectedShot.positionX) || 0;
+        typeof detectedShot.x === 'number'
+          ? detectedShot.x
+          : typeof detectedShot.positionX === 'number'
+            ? detectedShot.positionX
+            : Number(detectedShot.positionX) || 0;
       const normalizedPositionY =
-        typeof detectedShot.positionY === 'number'
-          ? detectedShot.positionY
-          : Number(detectedShot.positionY) || 0;
+        typeof detectedShot.y === 'number'
+          ? detectedShot.y
+          : typeof detectedShot.positionY === 'number'
+            ? detectedShot.positionY
+            : Number(detectedShot.positionY) || 0;
 
       const computedScores = computeShotScore({
         x: normalizedPositionX,
