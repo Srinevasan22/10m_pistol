@@ -285,7 +285,7 @@ def detect_shots(processed: dict, geom: dict) -> List[dict]:
         for thr in [250, 245, 240]:
             _, bright = cv2.threshold(blur, thr, 255, cv2.THRESH_BINARY)
             cnts, _ = cv2.findContours(bright, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if len(cnts) >= 3:
+            if len(cnts) >= 1:
                 contours = cnts
                 break
 
@@ -302,7 +302,7 @@ def detect_shots(processed: dict, geom: dict) -> List[dict]:
             )
             dark = cv2.medianBlur(dark, 5)
             cnts, _ = cv2.findContours(dark, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if len(cnts) >= 3:
+            if len(cnts) >= 1:
                 contours = cnts
                 break
 
@@ -353,6 +353,9 @@ def score_shots(shots: List[dict], geom: dict) -> List[dict]:
     scored: List[dict] = []
     target_r_px = ppm * MAX_RADIUS_MM
 
+    def clamp(v: float, lo: float = -1.5, hi: float = 1.5) -> float:
+        return max(lo, min(hi, v))
+
     for shot in shots:
         dx_px = shot["x_px"] - cx
         dy_px = shot["y_px"] - cy
@@ -363,8 +366,10 @@ def score_shots(shots: List[dict], geom: dict) -> List[dict]:
         score = compute_score_for_radius_mm(r_mm)
 
         r_norm = r_mm / MAX_RADIUS_MM if MAX_RADIUS_MM else 0.0
-        x_norm = (dx_px / ppm) / MAX_RADIUS_MM if ppm else 0.0
-        y_norm = (dy_px / ppm) / MAX_RADIUS_MM if ppm else 0.0
+        x_norm = clamp((dx_px / ppm) / MAX_RADIUS_MM if ppm else 0.0)
+        # y_norm > 0 means "above center" (screen coordinates). We flip the
+        # image-space y because pixel coordinates grow downward.
+        y_norm = clamp((-dy_px / ppm) / MAX_RADIUS_MM if ppm else 0.0)
 
         scored.append(
             {
@@ -379,6 +384,13 @@ def score_shots(shots: List[dict], geom: dict) -> List[dict]:
         )
 
     scored.sort(key=lambda s: s.get("r_mm", 0.0))
+
+    # Safety: if we detect a ridiculous number of blobs, treat this as failure.
+    MAX_REASONABLE_SHOTS = 70
+    if len(scored) > MAX_REASONABLE_SHOTS:
+        log(f"Too many shots detected ({len(scored)}); treating as failure")
+        return []
+
     return scored
 
 
@@ -424,6 +436,9 @@ def save_debug_image(
         cv2.drawContours(debug, contours, -1, (255, 0, 0), 1)  # blue
 
         # 3) Draw accepted shots (red), using normalized coordinates
+        # target_r here is the theoretical 1-ring radius in pixels
+        # (pixels_per_mm * MAX_RADIUS_MM). This matches how we normalized
+        # x_norm/y_norm.
         for s in shots:
             x_norm = s.get("x_norm")
             y_norm = s.get("y_norm")

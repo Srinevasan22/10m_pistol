@@ -205,6 +205,14 @@ export const scanTargetAndCreateShots = async (req, res) => {
       });
     }
 
+    if (detectorOutput?.error) {
+      console.error('[scanTarget] Detector reported error:', detectorOutput.error);
+      return res.status(422).json({
+        error:
+          'We could not analyse this target image. Please retake the photo with the whole target visible.',
+      });
+    }
+
     const detectedShots = Array.isArray(detectorOutput)
       ? detectorOutput
       : detectorOutput?.shots;
